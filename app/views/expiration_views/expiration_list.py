@@ -15,6 +15,7 @@ from .expiration_form import ExpirationForm
 
 class ExpirationListView(QWidget):
     """Vista para listar y gestionar vencimientos"""
+    expirationsChanged = Signal()
     
     def __init__(self, expiration_controller, parent=None):
         super().__init__(parent)
@@ -22,6 +23,8 @@ class ExpirationListView(QWidget):
         self.auth_controller = AuthController()
         self.current_user = self.auth_controller.get_current_user()
         self.expirations = []
+        self.current_sort_column = -1
+        self.current_sort_order = Qt.AscendingOrder
         self.setup_ui()
         self.refresh_data()
     
@@ -66,14 +69,14 @@ class ExpirationListView(QWidget):
         self.date_from = QDateEdit()
         self.date_from.setDisplayFormat("dd/MM/yyyy")
         self.date_from.setCalendarPopup(True)
-        self.date_from.setDate(QDate.currentDate().addDays(-30))
+        self.date_from.setDate(QDate.currentDate().addMonths(-3))
         self.date_from.dateChanged.connect(self.apply_filters)
         
         date_to_label = QLabel("Hasta:")
         self.date_to = QDateEdit()
         self.date_to.setDisplayFormat("dd/MM/yyyy")
         self.date_to.setCalendarPopup(True)
-        self.date_to.setDate(QDate.currentDate().addDays(60))
+        self.date_to.setDate(QDate.currentDate().addMonths(3))
         self.date_to.dateChanged.connect(self.apply_filters)
         
         # Botón para limpiar filtros
@@ -104,10 +107,15 @@ class ExpirationListView(QWidget):
         self.new_button = QPushButton("Nuevo vencimiento")
         self.new_button.clicked.connect(self.create_new_expiration)
         
+        self.edit_button = QPushButton("Editar vencimiento")
+        self.edit_button.clicked.connect(self.edit_selected_expiration)
+        self.edit_button.setEnabled(False)  # Inicialmente deshabilitado hasta que se seleccione una fila
+        
         self.refresh_button = QPushButton("Actualizar")
         self.refresh_button.clicked.connect(self.refresh_data)
         
         actions_layout.addWidget(self.new_button)
+        actions_layout.addWidget(self.edit_button)
         actions_layout.addWidget(self.refresh_button)
         actions_layout.addStretch()
         
@@ -128,9 +136,12 @@ class ExpirationListView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ID
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Fecha
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Días
+        self.table.setSortingEnabled(True) # Habilitar ordenamiento
+        self.table.horizontalHeader().sectionClicked.connect(self.sort_table) # Conectar señal de clic
         
-        # Conectar evento de doble clic
+        # Conectar eventos de tabla
         self.table.doubleClicked.connect(self.on_row_double_clicked)
+        self.table.selectionModel().selectionChanged.connect(self.on_selection_changed)
         
         # Configurar menú contextual
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -224,6 +235,12 @@ class ExpirationListView(QWidget):
         if success:
             self.expirations = expirations
             self.populate_filter_combos()
+            # Asegurar que los filtros por defecto sean 'Todos'
+            self.priority_combo.setCurrentIndex(0)
+            self.responsible_combo.setCurrentIndex(0)
+            self.sector_combo.setCurrentIndex(0)
+            self.status_combo.setCurrentIndex(0)
+            # Aplicar filtros (que ahora serán 'Todos' por defecto)
             self.apply_filters()
             self.status_label.setText(f"Total: {len(expirations)} vencimientos")
         else:
@@ -277,8 +294,8 @@ class ExpirationListView(QWidget):
         self.status_combo.setCurrentIndex(0)
         
         # Restablecer fechas
-        self.date_from.setDate(QDate.currentDate().addDays(-30))
-        self.date_to.setDate(QDate.currentDate().addDays(60))
+        self.date_from.setDate(QDate.currentDate().addMonths(-3))
+        self.date_to.setDate(QDate.currentDate().addMonths(3))
         
         # Aplicar filtros (todos los vencimientos)
         self.apply_filters()
@@ -346,6 +363,19 @@ class ExpirationListView(QWidget):
         expiration_id = int(self.table.item(row, 0).text())
         self.edit_expiration(expiration_id)
     
+    def on_selection_changed(self):
+        """Actualiza los botones según la selección actual"""
+        selected_rows = self.table.selectionModel().selectedRows()
+        self.edit_button.setEnabled(len(selected_rows) > 0)
+    
+    def edit_selected_expiration(self):
+        """Edita el vencimiento seleccionado actualmente"""
+        selected_rows = self.table.selectionModel().selectedRows()
+        if selected_rows:
+            row = selected_rows[0].row()
+            expiration_id = int(self.table.item(row, 0).text())
+            self.edit_expiration(expiration_id)
+    
     def show_context_menu(self, position):
         """Muestra el menú contextual para la fila seleccionada"""
         selected_indexes = self.table.selectedIndexes()
@@ -356,6 +386,10 @@ class ExpirationListView(QWidget):
         expiration_id = int(self.table.item(row, 0).text())
         
         menu = QMenu(self)
+        
+        view_action = QAction("Ver detalles", self)
+        view_action.triggered.connect(lambda: self.view_expiration_details(expiration_id))
+        menu.addAction(view_action)
         
         edit_action = QAction("Editar", self)
         edit_action.triggered.connect(lambda: self.edit_expiration(expiration_id))
@@ -396,13 +430,33 @@ class ExpirationListView(QWidget):
         if form.exec() == QDialog.Accepted:
             self.refresh_data()
             QMessageBox.information(self, "Éxito", "Vencimiento creado correctamente.")
+            self.expirationsChanged.emit()
+    
+    def view_expiration_details(self, expiration_id):
+        """Muestra los detalles de un vencimiento en modo solo lectura"""
+        dialog = ExpirationForm(self.expiration_controller, expiration_id=expiration_id)
+        dialog.setWindowTitle("Detalles del vencimiento")
+        
+        # Deshabilitar edición
+        for tab_index in range(dialog.tab_widget.count()):
+            tab = dialog.tab_widget.widget(tab_index)
+            for child in tab.findChildren(QWidget):
+                if not isinstance(child, QLabel):
+                    child.setEnabled(False)
+        
+        # Ocultar botón de guardar, cambiar cancelar por cerrar
+        dialog.save_button.setVisible(False)
+        dialog.cancel_button.setText("Cerrar")
+        
+        dialog.exec()
     
     def edit_expiration(self, expiration_id):
         """Abre el formulario para editar un vencimiento"""
-        form = ExpirationForm(self.expiration_controller, expiration_id, parent=self)
-        if form.exec() == QDialog.Accepted:
+        dialog = ExpirationForm(self.expiration_controller, expiration_id=expiration_id, parent=self)
+        if dialog.exec() == QDialog.Accepted:
             self.refresh_data()
             QMessageBox.information(self, "Éxito", "Vencimiento actualizado correctamente.")
+            self.expirationsChanged.emit()
     
     def renew_expiration(self, expiration_id):
         """Abre un diálogo para renovar un vencimiento"""
@@ -499,3 +553,21 @@ class ExpirationListView(QWidget):
                     self, "Error",
                     f"Error al eliminar vencimiento: {message}"
                 )
+
+
+    @Slot(int)
+    def sort_table(self, logical_index):
+        """Ordena la tabla por la columna clickeada"""
+        # Determinar el orden
+        if self.current_sort_column == logical_index:
+            self.current_sort_order = Qt.DescendingOrder if self.current_sort_order == Qt.AscendingOrder else Qt.AscendingOrder
+        else:
+            self.current_sort_order = Qt.AscendingOrder
+        
+        self.current_sort_column = logical_index
+        
+        # Ordenar los datos en self.expirations basándose en la columna y orden
+        # Nota: Esto requiere que los datos relevantes estén en self.expirations
+        # o que se obtengan de la tabla antes de ordenar.
+        # Por simplicidad, usaremos el ordenamiento incorporado de QTableWidget.
+        self.table.sortByColumn(self.current_sort_column, self.current_sort_order)

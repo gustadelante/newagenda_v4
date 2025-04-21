@@ -103,16 +103,21 @@ class UserSettingsDialog(QDialog):
         # Vista por defecto
         default_view_layout = QFormLayout()
         self.default_view_combo = QComboBox()
-        self.default_view_combo.addItem("Vista Genio", "genio")
-        self.default_view_combo.addItem("Vista Alfombra", "alfombra")
+        self.default_view_combo.addItem("Vista Integral", "integral")
+        self.default_view_combo.addItem("Vista Sábana", "sabana")
         
         # Establecer vista por defecto
-        default_dashboard = self.user_preferences.get("default_dashboard", "genio")
+        default_dashboard = self.user_preferences.get("default_dashboard", "sabana")
+        # Map old default if necessary
+        if default_dashboard == "genio":
+             default_dashboard = "integral"
         index = self.default_view_combo.findData(default_dashboard)
+        if index < 0: # Fallback if saved preference is no longer valid
+            index = self.default_view_combo.findData("integral")
         if index >= 0:
             self.default_view_combo.setCurrentIndex(index)
         
-        default_view_layout.addRow("Vista predeterminada:", self.default_view_combo)
+        default_view_layout.addRow("Vista por defecto al iniciar:", self.default_view_combo)
         theme_layout.addLayout(default_view_layout)
         
         layout.addWidget(theme_group)
@@ -215,11 +220,11 @@ class UserSettingsDialog(QDialog):
                 'theme_mode': 'dark' if theme_manager.darkMode else 'light',
                 'remember_credentials': self.remember_credentials_check.isChecked(),
                 'default_dashboard': self.default_view_combo.currentData(),
-                'notification_settings': {
+                'notification_settings': json.dumps({
                     'email': self.email_notifications_check.isChecked(),
                     'push': self.push_notifications_check.isChecked(),
                     'desktop': self.desktop_notifications_check.isChecked()
-                }
+                })
             }
             
             self.user.update_preferences(preferences)

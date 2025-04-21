@@ -18,9 +18,9 @@ from ...controllers.expiration_controller import ExpirationController
 from ...utils.theme_manager import theme_manager
 
 
-class GenioDashboard(QWidget):
+class IntegralDashboard(QWidget):
     """
-    Dashboard "Genio" que muestra las alertas de vencimiento en formato
+    Dashboard "Integral" que muestra las alertas de vencimiento en formato
     de cuadrícula, calendario y gráfico circular.
     """
     
@@ -28,6 +28,7 @@ class GenioDashboard(QWidget):
         super().__init__(parent)
         self.expiration_controller = expiration_controller
         self.expirations = []
+        self._loading_data = False  # Flag to prevent filter signals during data load
         self.setup_ui()
         self.refresh_data()
     
@@ -44,26 +45,31 @@ class GenioDashboard(QWidget):
         priority_label = QLabel("Prioridad:")
         self.priority_combo = QComboBox()
         self.priority_combo.addItem("Todas", None)
+        self.priority_combo.setCurrentIndex(0)
         self.priority_combo.currentIndexChanged.connect(self.apply_filters)
         
         responsible_label = QLabel("Responsable:")
         self.responsible_combo = QComboBox()
         self.responsible_combo.addItem("Todos", None)
+        self.responsible_combo.setCurrentIndex(0)
         self.responsible_combo.currentIndexChanged.connect(self.apply_filters)
         
         sector_label = QLabel("Sector:")
         self.sector_combo = QComboBox()
         self.sector_combo.addItem("Todos", None)
+        self.sector_combo.setCurrentIndex(0)
         self.sector_combo.currentIndexChanged.connect(self.apply_filters)
         
         days_label = QLabel("Período:")
         self.days_combo = QComboBox()
+        self.days_combo.addItem("Todos", None)
         self.days_combo.addItem("7 días", 7)
         self.days_combo.addItem("15 días", 15)
         self.days_combo.addItem("30 días", 30)
         self.days_combo.addItem("60 días", 60)
         self.days_combo.addItem("90 días", 90)
-        self.days_combo.setCurrentIndex(2)  # 30 días por defecto
+        self.days_combo.setCurrentIndex(0)  # Mostrar todos por defecto
+        # Connect refresh_data AFTER setting initial index to avoid premature trigger
         self.days_combo.currentIndexChanged.connect(self.refresh_data)
         
         # Botón para guardar la vista actual
@@ -175,97 +181,107 @@ class GenioDashboard(QWidget):
     
     def refresh_data(self):
         """Actualiza los datos del dashboard"""
+        self._loading_data = True # Set flag before loading
         # Obtener el período seleccionado
         days = self.days_combo.currentData()
+        if days is None:
+            # Sin filtro de días, traer todos los vencimientos
+            success, expirations, _ = self.expiration_controller.get_all_expirations()
+        else:
+            # Obtener vencimientos próximos
+            success, expirations, _ = self.expiration_controller.get_upcoming_expirations(days)
         
-        # Obtener vencimientos próximos
-        success, expirations, _ = self.expiration_controller.get_upcoming_expirations(days)
         if success:
             self.expirations = expirations
-            
-            # Actualizar combos de filtro
+            # Actualizar combos de filtro (esto puede disparar apply_filters si no se maneja)
             self.populate_filter_combos()
-            
-            # Actualizar visualizaciones
-            self.update_grid()
-            self.update_calendar()
-            self.update_chart()
-            
-            # Seleccionar la fecha actual en el calendario
-            self.calendar.setSelectedDate(QDate.currentDate())
-            self.date_selected(QDate.currentDate())
-    
+            self._loading_data = False # Unset flag after populating combos
+            # Aplicar filtros y actualizar vistas explícitamente
+            self.apply_filters()
+            # Seleccionar la fecha actual en el calendario y actualizar detalles
+            current_qdate = QDate.currentDate()
+            self.calendar.setSelectedDate(current_qdate)
+            # self.date_selected(current_qdate) # apply_filters ahora llama a date_selected
+        else:
+            self.expirations = []
+            self.populate_filter_combos() # Clear combos even on error
+            self._loading_data = False # Unset flag
+            self.apply_filters() # Clear views
+            QMessageBox.warning(self, "Error", "No se pudieron cargar los vencimientos.")
+
     def populate_filter_combos(self):
-        """Popula los combos de filtros con datos únicos de los vencimientos"""
-        # Guardar las selecciones actuales
+        """Popula los combos de filtros con datos únicos de los vencimientos cargados"""
+        # Guardar selecciones actuales
         priority_id = self.priority_combo.currentData()
         responsible_id = self.responsible_combo.currentData()
         sector_id = self.sector_combo.currentData()
-        
+
+        # Desconectar señales temporalmente para evitar triggers
+        try:
+            self.priority_combo.currentIndexChanged.disconnect(self.apply_filters)
+            self.responsible_combo.currentIndexChanged.disconnect(self.apply_filters)
+            self.sector_combo.currentIndexChanged.disconnect(self.apply_filters)
+        except RuntimeError: # Signals might not be connected yet
+            pass
+
         # Limpiar y repopular
         self.priority_combo.clear()
         self.responsible_combo.clear()
         self.sector_combo.clear()
-        
-        # Agregar opción "Todos"
+
         self.priority_combo.addItem("Todas", None)
         self.responsible_combo.addItem("Todos", None)
         self.sector_combo.addItem("Todos", None)
-        
-        # Conjuntos para valores únicos
+
         priorities = set()
         responsibles = set()
         sectors = set()
-        
-        # Recolectar valores únicos
+
         for exp in self.expirations:
             if exp['priority'] and (exp['priority']['id'], exp['priority']['name']) not in priorities:
                 priorities.add((exp['priority']['id'], exp['priority']['name']))
-            
             if exp['responsible'] and (exp['responsible']['id'], exp['responsible']['full_name']) not in responsibles:
                 responsibles.add((exp['responsible']['id'], exp['responsible']['full_name']))
-            
             if exp['sector'] and (exp['sector']['id'], exp['sector']['name']) not in sectors:
                 sectors.add((exp['sector']['id'], exp['sector']['name']))
-        
-        # Agregar opciones a los combos
-        for priority_id, priority_name in sorted(priorities, key=lambda x: x[1]):
-            self.priority_combo.addItem(priority_name, priority_id)
-        
-        for responsible_id, responsible_name in sorted(responsibles, key=lambda x: x[1]):
-            self.responsible_combo.addItem(responsible_name, responsible_id)
-        
-        for sector_id, sector_name in sorted(sectors, key=lambda x: x[1]):
-            self.sector_combo.addItem(sector_name, sector_id)
-        
-        # Restaurar selecciones anteriores si es posible
-        if priority_id is not None:
-            index = self.priority_combo.findData(priority_id)
-            if index >= 0:
-                self.priority_combo.setCurrentIndex(index)
-        
-        if responsible_id is not None:
-            index = self.responsible_combo.findData(responsible_id)
-            if index >= 0:
-                self.responsible_combo.setCurrentIndex(index)
-        
-        if sector_id is not None:
-            index = self.sector_combo.findData(sector_id)
-            if index >= 0:
-                self.sector_combo.setCurrentIndex(index)
-    
+
+        for pid, name in sorted(priorities, key=lambda x: x[1]):
+            self.priority_combo.addItem(name, pid)
+        for rid, name in sorted(responsibles, key=lambda x: x[1]):
+            self.responsible_combo.addItem(name, rid)
+        for sid, name in sorted(sectors, key=lambda x: x[1]):
+            self.sector_combo.addItem(name, sid)
+
+        # Restaurar selecciones
+        priority_index = self.priority_combo.findData(priority_id)
+        self.priority_combo.setCurrentIndex(priority_index if priority_index >= 0 else 0)
+
+        responsible_index = self.responsible_combo.findData(responsible_id)
+        self.responsible_combo.setCurrentIndex(responsible_index if responsible_index >= 0 else 0)
+
+        sector_index = self.sector_combo.findData(sector_id)
+        self.sector_combo.setCurrentIndex(sector_index if sector_index >= 0 else 0)
+
+        # Reconectar señales
+        self.priority_combo.currentIndexChanged.connect(self.apply_filters)
+        self.responsible_combo.currentIndexChanged.connect(self.apply_filters)
+        self.sector_combo.currentIndexChanged.connect(self.apply_filters)
+
     def apply_filters(self):
-        """Aplica los filtros seleccionados"""
-        self.update_grid()
-        self.update_calendar()
-        self.update_chart()
+        """Aplica los filtros seleccionados y actualiza las vistas"""
+        if self._loading_data:
+            return # No aplicar filtros mientras se cargan datos
+            
+        filtered_expirations = self.get_filtered_expirations()
         
-        # Actualizar detalles para la fecha seleccionada
-        selected_date = self.calendar.selectedDate()
-        self.date_selected(selected_date)
-    
+        self.update_grid(filtered_expirations)
+        self.update_calendar(filtered_expirations)
+        self.update_chart(filtered_expirations)
+        # Actualizar detalles para la fecha seleccionada actualmente en el calendario
+        self.date_selected(self.calendar.selectedDate())
+
     def get_filtered_expirations(self):
-        """Retorna los vencimientos filtrados según los criterios seleccionados"""
+        """Filtra la lista self.expirations según los combos seleccionados"""
         priority_id = self.priority_combo.currentData()
         responsible_id = self.responsible_combo.currentData()
         sector_id = self.sector_combo.currentData()
@@ -274,17 +290,17 @@ class GenioDashboard(QWidget):
         
         if priority_id is not None:
             filtered = [exp for exp in filtered if exp['priority'] and exp['priority']['id'] == priority_id]
-        
+            
         if responsible_id is not None:
             filtered = [exp for exp in filtered if exp['responsible'] and exp['responsible']['id'] == responsible_id]
-        
+            
         if sector_id is not None:
             filtered = [exp for exp in filtered if exp['sector'] and exp['sector']['id'] == sector_id]
-        
+            
         return filtered
-    
-    def update_grid(self):
-        """Actualiza la cuadrícula de vencimientos"""
+
+    def update_grid(self, expirations_to_display):
+        """Actualiza la cuadrícula de vencimientos con los datos filtrados"""
         # Limpiar cuadrícula existente
         for i in reversed(range(self.grid.count())): 
             self.grid.itemAt(i).widget().setParent(None)
@@ -292,30 +308,30 @@ class GenioDashboard(QWidget):
         filtered_expirations = self.get_filtered_expirations()
         
         # Agrupar por prioridad
-        by_priority = {}
-        for exp in filtered_expirations:
+        exp_by_priority = {}
+        for exp in expirations_to_display:
             priority_name = exp['priority']['name'] if exp['priority'] else "Sin prioridad"
             priority_color = exp['priority']['color'] if exp['priority'] else "#999999"
             
-            if priority_name not in by_priority:
-                by_priority[priority_name] = {
+            if priority_name not in exp_by_priority:
+                exp_by_priority[priority_name] = {
                     'color': priority_color,
                     'expirations': []
                 }
             
-            by_priority[priority_name]['expirations'].append(exp)
+            exp_by_priority[priority_name]['expirations'].append(exp)
         
         # Ordenar prioridades (Crítica, Alta, Media, Baja)
         priority_order = {"Crítica": 0, "Alta": 1, "Media": 2, "Baja": 3}
         sorted_priorities = sorted(
-            by_priority.keys(),
+            exp_by_priority.keys(),
             key=lambda p: priority_order.get(p, 99)
         )
         
         # Crear widgets para cada prioridad
         row = 0
         for priority in sorted_priorities:
-            priority_data = by_priority[priority]
+            priority_data = exp_by_priority[priority]
             
             # Encabezado de prioridad
             header = QLabel(f"{priority} ({len(priority_data['expirations'])})")
@@ -354,9 +370,9 @@ class GenioDashboard(QWidget):
             self.grid.addWidget(separator, row, 0, 1, 2)
             row += 1
     
-    def update_calendar(self):
-        """Actualiza el calendario con los vencimientos"""
-        # Limpiar formato de fechas
+    def update_calendar(self, expirations_to_display):
+        """Actualiza el calendario resaltando las fechas con vencimientos filtrados"""
+        # Limpiar formatos existentes
         self.calendar.setDateTextFormat(QDate(), QTextCharFormat())
         
         filtered_expirations = self.get_filtered_expirations()
@@ -380,59 +396,65 @@ class GenioDashboard(QWidget):
             format.setForeground(QColor("white"))
             self.calendar.setDateTextFormat(qdate, format)
     
-    def update_chart(self):
-        """Actualiza el gráfico circular"""
-        filtered_expirations = self.get_filtered_expirations()
-        
-        # Contar por estado
+    def update_chart(self, expirations_to_display):
+        """Actualiza el gráfico circular con la distribución por estado de los datos filtrados"""
+        # Crear un nuevo gráfico
+        chart = QChart()
+        chart.setTitle("Distribución por estado")
+        chart.setAnimationOptions(QChart.SeriesAnimations)
+
+        # Crear la serie de tarta
+        series = QPieSeries()
+
+        # Agrupar por estado
         status_counts = {}
-        for exp in filtered_expirations:
+        for exp in expirations_to_display:
             status_name = exp['status']['name'] if exp['status'] else "Sin estado"
             status_color = exp['status']['color'] if exp['status'] else "#999999"
-            
             if status_name not in status_counts:
-                status_counts[status_name] = {
-                    'count': 0,
-                    'color': status_color
-                }
-            
+                status_counts[status_name] = {'count': 0, 'color': status_color}
             status_counts[status_name]['count'] += 1
-        
-        # Crear serie para el gráfico circular
-        series = QPieSeries()
-        
-        for status, data in status_counts.items():
-            slice = series.append(f"{status} ({data['count']})", data['count'])
-            slice.setBrush(QColor(data['color']))
-            slice.setLabelVisible(True)
-        
-        # Crear y configurar gráfico
-        chart = QChart()
+
+        # Añadir datos a la serie
+        total_expirations = len(expirations_to_display)
+        if total_expirations > 0:
+            for status_name, data in status_counts.items():
+                count = data['count']
+                percentage = (count / total_expirations) * 100
+                slice_label = f"{status_name}: {count} ({percentage:.1f}%)"
+                pie_slice = QPieSlice(slice_label, count)
+                pie_slice.setColor(QColor(data['color']))
+                pie_slice.setLabelVisible(True)
+                series.append(pie_slice)
+
+        # Añadir serie al gráfico
         chart.addSeries(series)
-        chart.setTitle("Vencimientos por estado")
+
+        # Configurar leyenda
         chart.legend().setVisible(True)
         chart.legend().setAlignment(Qt.AlignBottom)
-        
-        # Asignar gráfico a la vista
+
+        # Limpiar series anteriores y establecer el nuevo gráfico
         self.chart_view.setChart(chart)
-    
-    def date_selected(self, date):
-        """Actualiza la tabla de detalles cuando se selecciona una fecha en el calendario"""
-        self.details_table.clearContents()
+
+    def date_selected(self, date): # Parameter name is 'date'
+        """Muestra los detalles de los vencimientos para la fecha seleccionada"""
+        # Limpiar tabla de detalles
         self.details_table.setRowCount(0)
         
-        selected_date = date.toPython()  # Convertir QDate a date de Python
-        filtered_expirations = self.get_filtered_expirations()
-        
+        # Obtener los vencimientos filtrados actualmente
+        current_filtered_expirations = self.get_filtered_expirations()
+
         # Filtrar vencimientos para la fecha seleccionada
-        day_expirations = [
-            exp for exp in filtered_expirations 
-            if exp['expiration_date'] == selected_date
+        selected_date_obj = date.toPython() # Use the parameter 'date'
+        expirations_on_date = [
+            exp for exp in current_filtered_expirations # Use the filtered list
+            if exp['expiration_date'] == selected_date_obj
         ]
         
-        # Llenar tabla con vencimientos del día
-        self.details_table.setRowCount(len(day_expirations))
-        for i, exp in enumerate(day_expirations):
+        # Poblar tabla de detalles
+        self.details_table.setRowCount(len(expirations_on_date))
+        for i, exp in enumerate(expirations_on_date): # Usar enumerate para obtener el índice i
             # Fecha
             date_item = QTableWidgetItem(exp['expiration_date'].strftime('%d/%m/%Y'))
             self.details_table.setItem(i, 0, date_item)

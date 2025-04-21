@@ -161,7 +161,7 @@ class User:
                 'user_id': self.id,
                 'theme_mode': 'light',
                 'remember_credentials': False,
-                'default_dashboard': 'genio',
+                'default_dashboard': 'integral',
                 'notification_settings': None
             }
     
@@ -203,7 +203,7 @@ class User:
                     self.id,
                     preferences.get('theme_mode', 'light'),
                     preferences.get('remember_credentials', False),
-                    preferences.get('default_dashboard', 'genio'),
+                    preferences.get('default_dashboard', 'integral'),
                     preferences.get('notification_settings', None)
                 )
                 self.db.execute_query(query, params, fetch=False, commit=True)

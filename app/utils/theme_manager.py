@@ -16,38 +16,62 @@ class ThemeManager(QObject):
         # Definir los colores para los temas
         self._themes = {
             "light": {
-                "primary": "#007bff",
-                "secondary": "#6c757d",
-                "success": "#28a745",
-                "danger": "#dc3545",
-                "warning": "#ffc107",
-                "info": "#17a2b8",
+                "primary": "#0055cc",
+                "secondary": "#5a6268",
+                "success": "#107c41",
+                "danger": "#c92a2a",
+                "warning": "#e67700",
+                "info": "#0277bd",
                 "light": "#f8f9fa",
-                "dark": "#343a40",
-                "background": "#ffffff",
+                "dark": "#212529",
+                "background": "#f0f2f5",
                 "card": "#ffffff",
-                "text": "#212529",
-                "border": "#dee2e6",
-                "shadow": "rgba(0, 0, 0, 0.1)",
-                "hover": "#f8f9fa",
-                "active": "#e9ecef"
+                "text": "#1a1a1a",
+                "text_secondary": "#495057",
+                "border": "#b0b6be",
+                "shadow": "rgba(0, 0, 0, 0.18)",
+                "hover": "#e2e6ea",
+                "active": "#c9cfd6",
+                "focus": "#0055cc",
+                "primary_hover": "#004099",
+                "primary_active": "#003380",
+                "hover_bg": "#e2e6ea",
+                "input_bg": "#ffffff",
+                "input_border": "#8a929a",
+                "input_focus": "#0055cc",
+                "table_header": "#e3e6ea",
+                "table_hover": "#e9ecef",
+                "table_border": "#b0b6be",
+                "disabled": "#d9dde2"
             },
             "dark": {
-                "primary": "#375a7f",
-                "secondary": "#444444",
-                "success": "#00bc8c",
-                "danger": "#e74c3c",
-                "warning": "#f39c12",
-                "info": "#3498db",
-                "light": "#adb5bd",
-                "dark": "#303030",
-                "background": "#222222",
-                "card": "#303030",
-                "text": "#ffffff",
-                "border": "#444444",
-                "shadow": "rgba(0, 0, 0, 0.3)",
-                "hover": "#444444",
-                "active": "#555555"
+                "primary": "#339cff",
+                "secondary": "#8a929a",
+                "success": "#3ecf8e",
+                "danger": "#ff5c5c",
+                "warning": "#ffd166",
+                "info": "#66cfff",
+                "light": "#f8f9fa",
+                "dark": "#181c20",
+                "background": "#181c20",
+                "card": "#23272b",
+                "text": "#f8f9fa",
+                "text_secondary": "#bfc8d1",
+                "border": "#353a40",
+                "shadow": "rgba(0, 0, 0, 0.7)",
+                "hover": "#23272b",
+                "active": "#353a40",
+                "focus": "#339cff",
+                "primary_hover": "#1976d2",
+                "primary_active": "#1565c0",
+                "hover_bg": "#23272b",
+                "input_bg": "#23272b",
+                "input_border": "#353a40",
+                "input_focus": "#339cff",
+                "table_header": "#23272b",
+                "table_hover": "#23272b",
+                "table_border": "#353a40",
+                "disabled": "#353a40"
             }
         }
     
@@ -62,17 +86,36 @@ class ThemeManager(QObject):
         if self._dark_mode != value:
             self._dark_mode = value
             self._settings.setValue("theme/darkMode", value)
+            # Emitir señal para notificar el cambio de tema
             self.themeChanged.emit()
+            
+            # Aplicar el tema inmediatamente a la aplicación actual
+            from PySide6.QtWidgets import QApplication
+            if QApplication.instance():
+                self.apply_theme(QApplication.instance())
     
     @Slot()
     def toggleTheme(self):
         """Alterna entre tema claro y oscuro"""
         self.darkMode = not self._dark_mode
+        # La aplicación del tema se maneja automáticamente en el setter de darkMode
     
     def get_theme_colors(self) -> Dict[str, str]:
         """Obtiene los colores del tema actual"""
         theme_name = "dark" if self._dark_mode else "light"
         return self._themes[theme_name]
+    
+    def get_color(self, color_name: str) -> str:
+        """Obtiene un color específico del tema actual"""
+        colors = self.get_theme_colors()
+        
+        # Manejar colores especiales que no están directamente en el diccionario
+        if color_name == "text_primary":
+            return colors.get("text", "#000000")
+        elif color_name == "primary_pressed":
+            return colors.get("primary_active", "#000000")
+            
+        return colors.get(color_name, "#000000")  # Devuelve negro como color por defecto si no existe
     
     def get_stylesheet(self) -> str:
         """Obtiene la hoja de estilos para el tema actual"""
@@ -92,22 +135,29 @@ class ThemeManager(QObject):
             background-color: {colors["primary"]};
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            min-height: 40px;
+            padding: 8px 20px;
+            border-radius: 5px;
             font-weight: bold;
         }}
-        
+
         QPushButton:hover {{
-            background-color: {colors["primary"]}e0;
+            background-color: {colors['primary_hover']};
+            border: 1px solid {colors['primary_active']};
+        }}
+
+        QPushButton:pressed {{
+            background-color: {colors['primary_active']};
         }}
         
-        QPushButton:pressed {{
-            background-color: {colors["primary"]}c0;
+        QPushButton:focus {{
+            outline: 2px solid {colors['focus']};
+            outline-offset: 2px;
         }}
         
         QPushButton:disabled {{
-            background-color: {colors["secondary"]};
-            color: {colors["light"]};
+            background-color: {colors["disabled"]};
+            color: {colors["text_secondary"]};
         }}
         
         QPushButton.secondary {{
@@ -129,34 +179,52 @@ class ThemeManager(QObject):
         
         /* Campos de texto */
         QLineEdit, QTextEdit, QPlainTextEdit {{
-            background-color: {colors["card"]};
+            background-color: {colors["input_bg"]};
             color: {colors["text"]};
-            border: 1px solid {colors["border"]};
+            border: 1px solid {colors["input_border"]};
             padding: 8px;
             border-radius: 4px;
         }}
         
         QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
+            border: 2px solid {colors["input_focus"]};
+            background-color: {colors["input_bg"]};
+        }}
+        
+        QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover {{
             border: 1px solid {colors["primary"]};
+            background-color: {colors["hover"]};
         }}
         
         /* Combobox */
         QComboBox {{
-            background-color: {colors["card"]};
+            background-color: {colors["input_bg"]};
             color: {colors["text"]};
-            border: 1px solid {colors["border"]};
+            border: 1px solid {colors["input_border"]};
             padding: 8px;
             border-radius: 4px;
+            min-height: 40px;
+        }}
+        
+        QComboBox:hover {{
+            border: 1px solid {colors["primary"]};
+            background-color: {colors["hover"]};
+        }}
+        
+        QComboBox:focus {{
+            border: 2px solid {colors["input_focus"]};
+            background-color: {colors["input_bg"]};
         }}
         
         QComboBox::drop-down {{
             border: 0px;
+            width: 30px;
         }}
         
         QComboBox QAbstractItemView {{
-            background-color: {colors["card"]};
+            background-color: {colors["input_bg"]};
             color: {colors["text"]};
-            border: 1px solid {colors["border"]};
+            border: 1px solid {colors["input_border"]};
             selection-background-color: {colors["primary"]};
             selection-color: white;
         }}
@@ -186,12 +254,24 @@ class ThemeManager(QObject):
         QTableView, QTableWidget {{
             background-color: {colors["card"]};
             color: {colors["text"]};
-            gridline-color: {colors["border"]};
-            border: 1px solid {colors["border"]};
+            gridline-color: {colors["table_border"]};
+            border: 1px solid {colors["table_border"]};
+            border-radius: 4px;
+            alternate-background-color: {colors["table_hover"]};
         }}
         
         QTableView::item, QTableWidget::item {{
-            padding: 4px;
+            padding: 8px;
+        }}
+        
+        QTableView::item:alternate, QTableWidget::item:alternate {{
+            background-color: {colors["table_hover"]};
+            color: {colors["text"]};
+        }}
+        
+        QTableView::item:hover, QTableWidget::item:hover {{
+            background-color: {colors["table_hover"]};
+            color: {colors["text"]};
         }}
         
         QTableView::item:selected, QTableWidget::item:selected {{
@@ -199,11 +279,16 @@ class ThemeManager(QObject):
             color: white;
         }}
         
-        QHeaderView::section {{
-            background-color: {colors["secondary"]};
+        QTableView::item:selected:hover, QTableWidget::item:selected:hover {{
+            background-color: {colors["primary_hover"]};
             color: white;
-            padding: 6px;
-            border: 1px solid {colors["border"]};
+        }}
+        
+        QHeaderView::section {{
+            background-color: {colors["table_header"]};
+            color: {colors["text"]};
+            padding: 10px;
+            border: 1px solid {colors["table_border"]};
             font-weight: bold;
         }}
         
@@ -226,14 +311,22 @@ class ThemeManager(QObject):
         QScrollBar:vertical {{
             border: none;
             background: {colors["background"]};
-            width: 10px;
+            width: 12px;
             margin: 0px;
         }}
         
         QScrollBar::handle:vertical {{
             background: {colors["secondary"]};
-            min-height: 20px;
-            border-radius: 5px;
+            min-height: 30px;
+            border-radius: 6px;
+        }}
+        
+        QScrollBar::handle:vertical:hover {{
+            background: {colors["primary"]};
+        }}
+        
+        QScrollBar::handle:vertical:pressed {{
+            background: {colors["primary_active"]};
         }}
         
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
@@ -243,14 +336,22 @@ class ThemeManager(QObject):
         QScrollBar:horizontal {{
             border: none;
             background: {colors["background"]};
-            height: 10px;
+            height: 12px;
             margin: 0px;
         }}
         
         QScrollBar::handle:horizontal {{
             background: {colors["secondary"]};
-            min-width: 20px;
-            border-radius: 5px;
+            min-width: 30px;
+            border-radius: 6px;
+        }}
+        
+        QScrollBar::handle:horizontal:hover {{
+            background: {colors["primary"]};
+        }}
+        
+        QScrollBar::handle:horizontal:pressed {{
+            background: {colors["primary_active"]};
         }}
         
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -293,21 +394,29 @@ class ThemeManager(QObject):
         QTabWidget::pane {{
             border: 1px solid {colors["border"]};
             top: -1px;
+            background-color: {colors["card"]};
         }}
         
         QTabBar::tab {{
             background-color: {colors["background"]};
             color: {colors["text"]};
-            padding: 8px 16px;
+            padding: 10px 20px;
             border: 1px solid {colors["border"]};
             border-bottom: none;
             border-top-left-radius: 4px;
             border-top-right-radius: 4px;
+            margin-right: 2px;
+        }}
+        
+        QTabBar::tab:hover {{
+            background-color: {colors["hover"]};
+            color: {colors["text"]};
         }}
         
         QTabBar::tab:selected {{
-            background-color: {colors["card"]};
-            border-bottom: none;
+            background-color: {colors["primary"]};
+            color: white;
+            border-bottom: 2px solid {colors["primary"]};
         }}
         
         /* CheckBox */
@@ -316,18 +425,29 @@ class ThemeManager(QObject):
         }}
         
         QCheckBox::indicator {{
-            width: 18px;
-            height: 18px;
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
         }}
         
         QCheckBox::indicator:unchecked {{
-            border: 1px solid {colors["border"]};
-            background-color: {colors["card"]};
+            border: 2px solid {colors["input_border"]};
+            background-color: {colors["input_bg"]};
+        }}
+        
+        QCheckBox::indicator:unchecked:hover {{
+            border: 2px solid {colors["primary"]};
+            background-color: {colors["hover"]};
         }}
         
         QCheckBox::indicator:checked {{
             background-color: {colors["primary"]};
-            border: 1px solid {colors["primary"]};
+            border: 2px solid {colors["primary"]};
+        }}
+        
+        QCheckBox::indicator:checked:hover {{
+            background-color: {colors["primary_hover"]};
+            border: 2px solid {colors["primary_hover"]};
         }}
         
         /* RadioButton */
@@ -336,19 +456,28 @@ class ThemeManager(QObject):
         }}
         
         QRadioButton::indicator {{
-            width: 18px;
-            height: 18px;
-            border-radius: 9px;
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
         }}
         
         QRadioButton::indicator:unchecked {{
-            border: 1px solid {colors["border"]};
-            background-color: {colors["card"]};
+            border: 2px solid {colors["input_border"]};
+            background-color: {colors["input_bg"]};
+        }}
+        
+        QRadioButton::indicator:unchecked:hover {{
+            border: 2px solid {colors["primary"]};
         }}
         
         QRadioButton::indicator:checked {{
             background-color: {colors["primary"]};
-            border: 1px solid {colors["primary"]};
+            border: 2px solid {colors["primary"]};
+        }}
+        
+        QRadioButton::indicator:checked:hover {{
+            background-color: {colors["primary_hover"]};
+            border: 2px solid {colors["primary_hover"]};
         }}
         
         /* Progress Bar */
@@ -383,17 +512,33 @@ class ThemeManager(QObject):
             border-radius: 8px;
         }}
         
+        QSlider::handle:horizontal:hover {{
+            background: {colors["primary_hover"]};
+        }}
+        
         /* DateEdit */
         QDateEdit {{
-            background-color: {colors["card"]};
+            background-color: {colors["input_bg"]};
             color: {colors["text"]};
-            border: 1px solid {colors["border"]};
+            border: 1px solid {colors["input_border"]};
             padding: 8px;
             border-radius: 4px;
+            min-height: 40px;
+        }}
+        
+        QDateEdit:hover {{
+            border: 1px solid {colors["primary"]};
+            background-color: {colors["hover"]};
+        }}
+        
+        QDateEdit:focus {{
+            border: 2px solid {colors["input_focus"]};
+            background-color: {colors["input_bg"]};
         }}
         
         QDateEdit::drop-down {{
             border: 0px;
+            width: 30px;
         }}
         
         /* Ventanas y Diálogos */
@@ -408,11 +553,30 @@ class ThemeManager(QObject):
         QStatusBar {{
             background-color: {colors["card"]};
             color: {colors["text"]};
+            border-top: 1px solid {colors["border"]};
         }}
         
         QToolBar {{
             background-color: {colors["card"]};
             border: 1px solid {colors["border"]};
+            spacing: 3px;
+        }}
+        
+        QToolButton {{
+            background-color: {colors["primary"]};
+            color: white;
+            border-radius: 4px;
+            padding: 6px 12px;
+            margin: 2px;
+        }}
+        
+        QToolButton:hover {{
+            background-color: {colors["primary_hover"]};
+            border: 1px solid {colors["border"]};
+        }}
+        
+        QToolButton:pressed {{
+            background-color: {colors["primary_active"]};
         }}
         
         /* Frame */
@@ -425,34 +589,20 @@ class ThemeManager(QObject):
             border: none;
             border-radius: 0px;
         }}
-        
-        /* Label */
-        QLabel {{
-            color: {colors["text"]};
-        }}
-        
-        QLabel.title {{
-            font-size: 18px;
-            font-weight: bold;
-        }}
-        
-        QLabel.subtitle {{
-            font-size: 14px;
-            font-weight: bold;
-        }}
         """
         
         return stylesheet
     
     def apply_theme(self, app):
-        """Aplica el tema actual a la aplicación"""
+        """Aplica el tema a la aplicación"""
+        # Aplicar hoja de estilos
         app.setStyleSheet(self.get_stylesheet())
         
-        # Aplicar paleta de colores
+        # Configurar paleta de colores
+        palette = app.palette()
         colors = self.get_theme_colors()
-        palette = QPalette()
         
-        # Colores base
+        # Colores de la paleta
         palette.setColor(QPalette.Window, QColor(colors["background"]))
         palette.setColor(QPalette.WindowText, QColor(colors["text"]))
         palette.setColor(QPalette.Base, QColor(colors["card"]))
@@ -467,6 +617,7 @@ class ThemeManager(QObject):
         palette.setColor(QPalette.Highlight, QColor(colors["primary"]))
         palette.setColor(QPalette.HighlightedText, QColor("white"))
         
+        # Aplicar paleta
         app.setPalette(palette)
 
 

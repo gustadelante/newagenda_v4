@@ -175,9 +175,9 @@ class CategoryColumn(QWidget):
                 widget.deleteLater()
 
 
-class AlfombraDashboard(QWidget):
+class SabanaDashboard(QWidget):
     """
-    Dashboard "Alfombra" que muestra los vencimientos organizados
+    Dashboard "Sábana" que muestra los vencimientos organizados
     en columnas por categoría.
     """
     
@@ -186,6 +186,7 @@ class AlfombraDashboard(QWidget):
         self.expiration_controller = expiration_controller
         self.expirations = []
         self.category_columns = {}
+        self.filters_applied = False  # Variable de estado para filtros
         self.setup_ui()
         self.refresh_data()
     
@@ -201,26 +202,30 @@ class AlfombraDashboard(QWidget):
         # Selector de vista
         view_label = QLabel("Agrupar por:")
         self.view_combo = QComboBox()
+        self.view_combo.addItem("Todos", "all")
         self.view_combo.addItem("Estado", "status")
         self.view_combo.addItem("Prioridad", "priority")
         self.view_combo.addItem("Sector", "sector")
         self.view_combo.addItem("Responsable", "responsible")
+        self.view_combo.setCurrentIndex(0)
         self.view_combo.currentIndexChanged.connect(self.refresh_data)
         
         # Filtros adicionales
         self.filter_label = QLabel("Filtrar por:")
         self.filter_combo = QComboBox()
         self.filter_combo.addItem("Todos", None)
+        self.filter_combo.setCurrentIndex(0)
         self.filter_combo.currentIndexChanged.connect(self.apply_filters)
         
         days_label = QLabel("Período:")
         self.days_combo = QComboBox()
+        self.days_combo.addItem("Todos", None)
         self.days_combo.addItem("7 días", 7)
         self.days_combo.addItem("15 días", 15)
         self.days_combo.addItem("30 días", 30)
         self.days_combo.addItem("60 días", 60)
         self.days_combo.addItem("90 días", 90)
-        self.days_combo.setCurrentIndex(2)  # 30 días por defecto
+        self.days_combo.setCurrentIndex(0)  # Todos por defecto
         self.days_combo.currentIndexChanged.connect(self.refresh_data)
         
         # Botón para guardar la vista actual
@@ -285,22 +290,38 @@ class AlfombraDashboard(QWidget):
         
         main_layout.addWidget(table_frame)
     
-    def refresh_data(self):
+    def refresh_data(self, apply_filters=False):
         """Actualiza los datos del dashboard"""
+        self.apply_filters = apply_filters
+        success, expirations, _ = self.expiration_controller.get_all_expirations()
+        if success:
+            self.expirations = expirations
+            self.update_category_columns()
+            self.update_expirations_table()
+        else:
+            QMessageBox.warning(
+                self, "Error",
+                "No se pudieron cargar los vencimientos"
+            )
         # Obtener el período seleccionado
         days = self.days_combo.currentData()
         
         # Obtener vencimientos próximos
         success, expirations, _ = self.expiration_controller.get_upcoming_expirations(days)
         if success:
+            # Cargar todos los datos inicialmente sin aplicar filtros
             self.expirations = expirations
             
             # Actualizar filtros
             self.update_filter_combo()
             
-            # Actualizar vistas
-            self.update_category_columns()
-            self.update_expirations_table()
+            # Actualizar vistas usando filtros si corresponde
+            if apply_filters:
+                self.apply_filters()
+            else:
+                self.filters_applied = False
+                self.update_category_columns()
+                self.update_expirations_table()
     
     def update_filter_combo(self):
         """Actualiza el combo de filtros según la vista seleccionada"""
@@ -312,6 +333,7 @@ class AlfombraDashboard(QWidget):
         # Limpiar y configurar etiqueta
         self.filter_combo.clear()
         self.filter_combo.addItem("Todos", None)
+        self.filter_combo.setCurrentIndex(0)
         
         if view_type == "status":
             self.filter_label.setText("Filtrar por prioridad:")
@@ -365,6 +387,7 @@ class AlfombraDashboard(QWidget):
     
     def apply_filters(self):
         """Aplica los filtros seleccionados"""
+        self.filters_applied = True
         self.update_category_columns()
         self.update_expirations_table()
     
@@ -375,7 +398,7 @@ class AlfombraDashboard(QWidget):
         
         filtered = self.expirations
         
-        if filter_id is not None:
+        if filter_id not in (None, 0):
             if view_type == "status" or view_type == "sector":
                 # Filtrar por prioridad
                 filtered = [exp for exp in filtered if exp['priority'] and exp['priority']['id'] == filter_id]
@@ -396,58 +419,76 @@ class AlfombraDashboard(QWidget):
             column.deleteLater()
         self.category_columns.clear()
         
-        filtered_expirations = self.get_filtered_expirations()
+        # Aplicar filtros solo si hay cambios
+        filtered_expirations = self.expirations if not self.filters_applied else self.get_filtered_expirations()
         view_type = self.view_combo.currentData()
         
         # Agrupar vencimientos por categoría seleccionada
         categories = {}
         
-        for exp in filtered_expirations:
-            if view_type == "status":
-                # Agrupar por estado
-                if exp['status']:
-                    category_id = exp['status']['id']
-                    category_name = exp['status']['name']
-                    category_color = exp['status']['color']
+        # Agrupar según el tipo de vista seleccionado
+        if view_type == "all":
+            # Vista única con todos los elementos
+            category_id = 0
+            category_name = "Todos"
+            category_color = "#6c757d"
+            categories[category_id] = {
+                'name': category_name,
+                'color': category_color,
+                'expirations': filtered_expirations
+            }
+        else:
+            for exp in filtered_expirations:
+                if view_type == "status":
+                    # Agrupar por estado
+                    if exp['status']:
+                        category_id = exp['status']['id']
+                        category_name = exp['status']['name']
+                        category_color = exp['status']['color']
+                    else:
+                        category_id = 0
+                        category_name = "Sin estado"
+                        category_color = "#999999"
+                
+                elif view_type == "priority":
+                    # Agrupar por prioridad
+                    if exp['priority']:
+                        category_id = exp['priority']['id']
+                        category_name = exp['priority']['name']
+                        category_color = exp['priority']['color']
+                    else:
+                        category_id = 0
+                        category_name = "Sin prioridad"
+                        category_color = "#999999"
+                
+                elif view_type == "sector":
+                    # Agrupar por sector
+                    if exp['sector']:
+                        category_id = exp['sector']['id']
+                        category_name = exp['sector']['name']
+                        category_color = "#007bff"
+                    else:
+                        category_id = 0
+                        category_name = "Sin sector"
+                        category_color = "#999999"
+                
+                elif view_type == "responsible":
+                    # Agrupar por responsable
+                    if exp['responsible']:
+                        category_id = exp['responsible']['id']
+                        category_name = exp['responsible']['full_name']
+                        category_color = "#28a745"
+                    else:
+                        category_id = 0
+                        category_name = "Sin responsable"
+                        category_color = "#999999"
                 else:
+                    # Caso inesperado, asignar valores por defecto
                     category_id = 0
-                    category_name = "Sin estado"
+                    category_name = "Sin categoría"
                     category_color = "#999999"
-            
-            elif view_type == "priority":
-                # Agrupar por prioridad
-                if exp['priority']:
-                    category_id = exp['priority']['id']
-                    category_name = exp['priority']['name']
-                    category_color = exp['priority']['color']
-                else:
-                    category_id = 0
-                    category_name = "Sin prioridad"
-                    category_color = "#999999"
-            
-            elif view_type == "sector":
-                # Agrupar por sector
-                if exp['sector']:
-                    category_id = exp['sector']['id']
-                    category_name = exp['sector']['name']
-                    category_color = "#007bff"  # Color por defecto para sectores
-                else:
-                    category_id = 0
-                    category_name = "Sin sector"
-                    category_color = "#999999"
-            
-            elif view_type == "responsible":
-                # Agrupar por responsable
-                if exp['responsible']:
-                    category_id = exp['responsible']['id']
-                    category_name = exp['responsible']['full_name']
-                    category_color = "#28a745"  # Color por defecto para responsables
-                else:
-                    category_id = 0
-                    category_name = "Sin responsable"
-                    category_color = "#999999"
-            
-            # Crear categoría si no existe
+                
+                # Crear categoría si no existe
             if category_id not in categories:
                 categories[category_id] = {
                     'name': category_name,

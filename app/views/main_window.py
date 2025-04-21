@@ -9,8 +9,8 @@ from PySide6.QtGui import QIcon, QAction, QKeySequence
 from ..controllers.auth_controller import AuthController
 from ..controllers.expiration_controller import ExpirationController
 from ..utils.theme_manager import theme_manager
-from .dashboards.genio_dashboard import GenioDashboard
-from .dashboards.alfombra_dashboard import AlfombraDashboard
+from .dashboards.integral_dashboard import IntegralDashboard
+from .dashboards.sabana_dashboard import SabanaDashboard
 from .expiration_views.expiration_list import ExpirationListView
 from .expiration_views.expiration_form import ExpirationForm
 from .user_views.user_settings import UserSettingsDialog
@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         
         # Configurar tema
         theme_manager.themeChanged.connect(self.update_theme)
+        theme_manager.themeChanged.connect(self.update_toolbar_style)
     
     def setup_central_widget(self):
         """Configura el widget central con pestañas para los dashboards"""
@@ -64,12 +65,13 @@ class MainWindow(QMainWindow):
         # Cabecera con información del usuario
         header = QWidget()
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(15, 10, 15, 10)
+        header_layout.setContentsMargins(20, 15, 20, 15)
         
         welcome_label = QLabel(f"Bienvenido, {self.current_user.full_name}")
-        welcome_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        welcome_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {theme_manager.get_color('text')};")
         
         user_info = QLabel(f"Rol: {', '.join([r['name'] for r in self.current_user.get_roles()])}")
+        user_info.setStyleSheet(f"font-size: 14px; color: {theme_manager.get_color('text_secondary')};")
         
         header_layout.addWidget(welcome_label)
         header_layout.addStretch()
@@ -81,24 +83,27 @@ class MainWindow(QMainWindow):
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet(f"background-color: {theme_manager.get_color('border')}; height: 1px;")
         main_layout.addWidget(separator)
         
         # Widget de pestañas para los dashboards
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabPosition(QTabWidget.North)
         self.tab_widget.setMovable(True)
+        self.tab_widget.setStyleSheet(f"QTabBar::tab {{ background: {theme_manager.get_color('card')}; color: {theme_manager.get_color('text')}; padding: 10px 20px; border: 1px solid {theme_manager.get_color('border')}; border-bottom: none; border-top-left-radius: 8px; border-top-right-radius: 8px; font-size: 15px; }} QTabBar::tab:selected {{ background: {theme_manager.get_color('primary')}; color: white; }} QTabWidget::pane {{ border: 1px solid {theme_manager.get_color('border')}; top: -1px; background: {theme_manager.get_color('card')}; }}")
         
         # Crear los dashboards
-        self.genio_dashboard = GenioDashboard(self.expiration_controller)
-        self.alfombra_dashboard = AlfombraDashboard(self.expiration_controller)
-        
-        # Agregar pestañas
-        self.tab_widget.addTab(self.genio_dashboard, "Vista Genio")
-        self.tab_widget.addTab(self.alfombra_dashboard, "Vista Alfombra")
-        
-        # Pestaña para la lista de vencimientos
+        self.integral_dashboard = IntegralDashboard(self.expiration_controller)
+        self.sabana_dashboard = SabanaDashboard(self.expiration_controller)
+        self.sabana_dashboard.refresh_data(apply_filters=False)
         self.expiration_list = ExpirationListView(self.expiration_controller)
+        self.tab_widget.addTab(self.integral_dashboard, "Vista Integral")
+        self.tab_widget.addTab(self.sabana_dashboard, "Vista Sábana")
+        # Pestaña para la lista de vencimientos
         self.tab_widget.addTab(self.expiration_list, "Vencimientos")
+        # Conectar señal de cambios en vencimientos para refrescar dashboards
+        self.expiration_list.expirationsChanged.connect(self.integral_dashboard.refresh_data)
+        self.expiration_list.expirationsChanged.connect(self.sabana_dashboard.refresh_data)
         
         main_layout.addWidget(self.tab_widget, 1)  # El dashboard ocupa todo el espacio restante
         
@@ -157,15 +162,15 @@ class MainWindow(QMainWindow):
         toggle_theme_action.triggered.connect(theme_manager.toggleTheme)
         view_menu.addAction(toggle_theme_action)
         
-        # Acción Vista Genio
-        genio_view_action = QAction("Vista &Genio", self)
-        genio_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
-        view_menu.addAction(genio_view_action)
+        # Acción Vista Integral
+        integral_view_action = QAction("Vista &Integral", self)
+        integral_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
+        view_menu.addAction(integral_view_action)
         
         # Acción Vista Alfombra
-        alfombra_view_action = QAction("Vista &Alfombra", self)
-        alfombra_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
-        view_menu.addAction(alfombra_view_action)
+        sabana_view_action = QAction("Vista &Sábana", self)
+        sabana_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        view_menu.addAction(sabana_view_action)
         
         # Menú Herramientas
         tools_menu = menubar.addMenu("&Herramientas")
@@ -193,6 +198,7 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Barra de herramientas principal")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(24, 24))
+        toolbar.setStyleSheet(f"QToolBar {{ background-color: {theme_manager.get_color('card')}; border-bottom: 1px solid {theme_manager.get_color('border')}; spacing: 5px; }} QToolButton {{ background-color: {theme_manager.get_color('primary')}; color: white; border-radius: 4px; padding: 8px 16px; margin: 3px; font-weight: bold; min-height: 36px; }} QToolButton:hover {{ background-color: {theme_manager.get_color('primary_hover')}; border: 1px solid {theme_manager.get_color('border')}; }} QToolButton:pressed {{ background-color: {theme_manager.get_color('primary_active')}; }} QToolButton:disabled {{ background-color: {theme_manager.get_color('disabled')}; color: {theme_manager.get_color('text_secondary')}; }}")
         self.addToolBar(toolbar)
         
         # Botón Nuevo Vencimiento
@@ -204,17 +210,17 @@ class MainWindow(QMainWindow):
         # Separador
         toolbar.addSeparator()
         
-        # Botón Vista Genio
-        genio_view_action = QAction("Genio", self)
-        genio_view_action.setToolTip("Ver dashboard Genio")
-        genio_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
-        toolbar.addAction(genio_view_action)
+        # Botón Vista Integral
+        integral_view_action = QAction("Integral", self)
+        integral_view_action.setToolTip("Ver dashboard Integral")
+        integral_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
+        toolbar.addAction(integral_view_action)
         
         # Botón Vista Alfombra
-        alfombra_view_action = QAction("Alfombra", self)
-        alfombra_view_action.setToolTip("Ver dashboard Alfombra")
-        alfombra_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
-        toolbar.addAction(alfombra_view_action)
+        sabana_view_action = QAction("Sábana", self)
+        sabana_view_action.setToolTip("Ver dashboard Sábana")
+        sabana_view_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        toolbar.addAction(sabana_view_action)
         
         # Separador
         toolbar.addSeparator()
@@ -238,6 +244,7 @@ class MainWindow(QMainWindow):
         theme_button.clicked.connect(theme_manager.toggleTheme)
         self.update_theme_button(theme_button)
         theme_manager.themeChanged.connect(lambda: self.update_theme_button(theme_button))
+        theme_button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
         toolbar.addWidget(theme_button)
     
     def setup_statusbar(self):
@@ -254,6 +261,12 @@ class MainWindow(QMainWindow):
             button.setText("☀️")
         else:
             button.setText("🌙")
+        button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
+    
+    def update_toolbar_style(self):
+        """Actualiza los estilos de la barra de herramientas"""
+        for toolbar in self.findChildren(QToolBar):
+            toolbar.setStyleSheet(f"QToolBar {{ background-color: {theme_manager.get_color('card')}; border-bottom: 1px solid {theme_manager.get_color('border')}; spacing: 5px; }} QToolButton {{ background-color: {theme_manager.get_color('primary')}; color: white; border-radius: 4px; padding: 8px 16px; margin: 3px; font-weight: bold; min-height: 36px; }} QToolButton:hover {{ background-color: {theme_manager.get_color('primary_hover')}; border: 1px solid {theme_manager.get_color('border')}; }} QToolButton:pressed {{ background-color: {theme_manager.get_color('primary_active')}; }} QToolButton:disabled {{ background-color: {theme_manager.get_color('disabled')}; color: {theme_manager.get_color('text_secondary')}; }}")
     
     def update_theme(self):
         """Actualiza el tema de la aplicación"""
@@ -323,8 +336,8 @@ class MainWindow(QMainWindow):
     
     def refresh_views(self):
         """Actualiza todas las vistas de la aplicación"""
-        self.genio_dashboard.refresh_data()
-        self.alfombra_dashboard.refresh_data()
+        self.integral_dashboard.refresh_data()
+        self.sabana_dashboard.refresh_data()
         self.expiration_list.refresh_data()
     
     def logout(self):
