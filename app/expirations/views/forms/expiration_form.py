@@ -11,7 +11,7 @@ from datetime import date, datetime
 import json
 
 from ...controllers.expiration_controller import ExpirationController
-from ...authentication.controllers.auth_controller import AuthController
+from ...controllers.auth_controller import AuthController
 from ...models.user import User
 
 
@@ -24,18 +24,6 @@ class ExpirationForm(QDialog):
         self.expiration_id = expiration_id
         self.auth_controller = AuthController()
         self.current_user = self.auth_controller.get_current_user()
-        
-        # Verificar si el usuario está autenticado
-        if not self.current_user:
-            # Intentar obtener el usuario actual nuevamente
-            # Esto puede resolver problemas de sincronización en la inicialización
-            import time
-            time.sleep(0.1)  # Pequeña pausa para asegurar que la autenticación esté completa
-            self.current_user = self.auth_controller.get_current_user()
-            
-            if not self.current_user:
-                QMessageBox.critical(self, "Error de autenticación", "No hay un usuario autenticado. Por favor, inicie sesión nuevamente.")
-                self.reject()
         
         self.expiration_data = None
         if expiration_id:
@@ -472,17 +460,6 @@ class ExpirationForm(QDialog):
         if not self.validate_form():
             return
         
-        # Verificar que el usuario esté autenticado
-        if not self.current_user:
-            # Intentar obtener el usuario actual nuevamente con un pequeño retraso
-            import time
-            time.sleep(0.1)  # Pequeña pausa para asegurar que la autenticación esté completa
-            self.current_user = self.auth_controller.get_current_user()
-            if not self.current_user:
-                QMessageBox.critical(self, "Error de autenticación", "No hay un usuario autenticado. Por favor, inicie sesión nuevamente.")
-                self.reject()
-                return
-        
         # Recopilar datos del vencimiento
         expiration_date = self.date_edit.date().toPython()
         concept = self.concept_edit.text().strip()
@@ -492,7 +469,6 @@ class ExpirationForm(QDialog):
         status_id = self.status_combo.currentData()
         notes = self.notes_edit.toPlainText().strip()
         
-        # Crear diccionario de datos básicos
         expiration_data = {
             'expiration_date': expiration_date,
             'concept': concept,
@@ -500,12 +476,9 @@ class ExpirationForm(QDialog):
             'priority_id': priority_id,
             'sector_id': sector_id,
             'status_id': status_id,
-            'notes': notes
+            'notes': notes,
+            'created_by': self.current_user.id
         }
-        
-        # Agregar el ID del creador solo si el usuario está autenticado
-        if self.current_user:
-            expiration_data['created_by'] = self.current_user.id
         
         if self.expiration_id:
             # Actualizar vencimiento existente

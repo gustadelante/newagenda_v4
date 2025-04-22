@@ -7,11 +7,11 @@ from PySide6.QtWidgets import QApplication, QSplashScreen, QStyleFactory
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QPixmap, QIcon
 
-from app.database.schema import initialize_database
-from app.controllers.auth_controller import AuthController
-from app.views.login_window import LoginWindow
-from app.views.main_window import MainWindow
-from app.utils.theme_manager import theme_manager
+from app.core.database.schema import initialize_database
+from app.authentication.controllers.auth_controller import AuthController
+from app.authentication.views.login_window import LoginWindow
+from app.main_window import MainWindow
+from app.core.utils.theme_manager import theme_manager
 
 
 class NewAgendaApp:
