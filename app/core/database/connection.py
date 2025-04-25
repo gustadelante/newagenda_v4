@@ -91,8 +91,24 @@ class DatabaseConnection:
         try:
             cursor = conn.cursor(dictionary=True)
             
+            # Convertir los placeholders ? a %s si es necesario (para compatibilidad)
+            # MariaDB usa %s para los parámetros, no ? como SQLite
+            if '?' in query and params:
+                # Contar cuántos ? hay en la consulta
+                placeholders_count = query.count('?')
+                # Reemplazar cada ? por %s
+                query = query.replace('?', '%s')
+                print(f"Consulta convertida: {query}")
+            
+            # Ejecutar la consulta con parámetros o sin ellos
             if params:
-                cursor.execute(query, params)
+                try:
+                    cursor.execute(query, params)
+                except Exception as e:
+                    print(f"Error al ejecutar consulta con parámetros: {e}")
+                    print(f"Consulta: {query}")
+                    print(f"Parámetros: {params}")
+                    raise
             else:
                 cursor.execute(query)
                 

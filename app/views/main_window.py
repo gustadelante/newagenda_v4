@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QSplitter, QFrame, QMessageBox, QDialog
 )
 from PySide6.QtCore import Qt, QSize, Slot, Signal
-from PySide6.QtGui import QIcon, QAction, QKeySequence
+from PySide6.QtGui import QIcon, QAction, QKeySequence, QColor, QPalette
 
 from ..controllers.auth_controller import AuthController
 from ..controllers.expiration_controller import ExpirationController
@@ -16,43 +16,79 @@ from .expiration_views.expiration_form import ExpirationForm
 from .user_views.user_settings import UserSettingsDialog
 
 
+
 class MainWindow(QMainWindow):
     """Ventana principal de la aplicación"""
     
     logoutRequested = Signal()
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_user=None):
         super().__init__(parent)
         self.auth_controller = AuthController()
         self.expiration_controller = ExpirationController()
-        
-        # Verificar que el usuario esté autenticado
-        if not self.auth_controller.is_authenticated():
-            raise RuntimeError("El usuario debe estar autenticado para iniciar la ventana principal")
-        
-        self.current_user = self.auth_controller.get_current_user()
+        if current_user is not None:
+            self.current_user = current_user
+        else:
+            if not self.auth_controller.is_authenticated():
+                raise RuntimeError("El usuario debe estar autenticado para iniciar la ventana principal")
+            self.current_user = self.auth_controller.get_current_user()
+        self.admin_panel = None
+        self.setup_ui()
+
+    def show_admin_panel(self):
+        """Muestra el panel de administración en un diálogo modal"""
+        if not self.admin_panel:
+            from .admin_views import AdminPanel
+            self.admin_panel = AdminPanel(self.current_user)
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Panel de Administración')
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(self.admin_panel)
+        dialog.setLayout(layout)
+        dialog.setMinimumSize(900, 600)
+        dialog.exec()
+
+    """Ventana principal de la aplicación"""
+    
+    logoutRequested = Signal()
+    
+    def __init__(self, parent=None, current_user=None):
+        super().__init__(parent)
+        self.auth_controller = AuthController()
+        self.expiration_controller = ExpirationController()
+        if current_user is not None:
+            self.current_user = current_user
+        else:
+            if not self.auth_controller.is_authenticated():
+                raise RuntimeError("El usuario debe estar autenticado para iniciar la ventana principal")
+            self.current_user = self.auth_controller.get_current_user()
+        self.admin_panel = None
         self.setup_ui()
     
     def setup_ui(self):
         """Configura la interfaz de usuario"""
         self.setWindowTitle("NewAgenda - Sistema de Gestión de Vencimientos")
         self.setMinimumSize(1200, 800)
-        
-        # Crear widgets centrales
-        self.setup_central_widget()
-        
-        # Crear barra de menús
+        self.refresh_admin_ui()
+        self.setup_central_widget()  # <-- ¡Esto asegura que las vistas principales se muestren!
+        # Configurar tema - Conexiones robustas
+        self.theme_connections = [
+            theme_manager.themeChanged.connect(self.update_theme),
+            theme_manager.themeChanged.connect(self.update_toolbar_style),
+            theme_manager.themeChanged.connect(self.update_header_theme),
+            theme_manager.themeChanged.connect(self.update_welcome_label_style)
+        ]
+
+    def refresh_admin_ui(self):
+        """Reconstruye el menú y toolbar de administración forzando refresco de usuario actual"""
+        # Limpiar menubar y toolbar
+        self.menuBar().clear()
+        for tb in self.findChildren(QToolBar):
+            self.removeToolBar(tb)
+        # Volver a crear menubar y toolbar
         self.setup_menubar()
-        
-        # Crear barra de herramientas
         self.setup_toolbar()
-        
-        # Crear barra de estado
-        self.setup_statusbar()
-        
-        # Configurar tema
-        theme_manager.themeChanged.connect(self.update_theme)
-        theme_manager.themeChanged.connect(self.update_toolbar_style)
+
     
     def setup_central_widget(self):
         """Configura el widget central con pestañas para los dashboards"""
@@ -63,21 +99,25 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
         
         # Cabecera con información del usuario
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
+        self.header = QWidget()
+        header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(20, 15, 20, 15)
         
-        welcome_label = QLabel(f"Bienvenido, {self.current_user.full_name}")
-        welcome_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {theme_manager.get_color('text')};")
+        self.welcome_label = QLabel(f"Bienvenido, {self.current_user.full_name}")
+        self.update_welcome_label_style()
         
-        user_info = QLabel(f"Rol: {', '.join([r['name'] for r in self.current_user.get_roles()])}")
-        user_info.setStyleSheet(f"font-size: 14px; color: {theme_manager.get_color('text_secondary')};")
+        # Eliminado el bloque try/except que causaba problemas
+        theme_manager.themeChanged.connect(self.update_welcome_label_style)
         
-        header_layout.addWidget(welcome_label)
+        self.user_info = QLabel(f"Rol: {', '.join([r['name'] for r in self.current_user.get_roles()])}")
+        self.user_info.setStyleSheet(f"font-size: 14px; color: {theme_manager.get_color('text_secondary')};")
+        
+        header_layout.addWidget(self.welcome_label)
         header_layout.addStretch()
-        header_layout.addWidget(user_info)
+        header_layout.addWidget(self.user_info)
         
-        main_layout.addWidget(header)
+        self.header.setStyleSheet(f"background-color: {theme_manager.get_color('card')};")
+        main_layout.addWidget(self.header)
         
         # Línea separadora
         separator = QFrame()
@@ -115,6 +155,16 @@ class MainWindow(QMainWindow):
         
         # Menú Archivo
         file_menu = menubar.addMenu("&Archivo")
+        
+        # Menú Administración (solo admin)
+        # DEBUG: Mostrar el usuario actual antes de mostrar el menú Administración
+        print(f"[DEBUG] Usuario actual en menú: {getattr(self.current_user, 'username', None)}")
+        # Mostrar menú Administración SOLO si el usuario es 'admin' (username literal)
+        if self.current_user and getattr(self.current_user, 'username', None) == 'admin':
+            admin_menu = menubar.addMenu("&Administración")
+            manage_users_action = QAction("Gestionar Usuarios/Roles/Permisos", self)
+            manage_users_action.triggered.connect(self.show_admin_panel)
+            admin_menu.addAction(manage_users_action)
         
         # Acción Nuevo Vencimiento
         new_expiration_action = QAction("&Nuevo Vencimiento", self)
@@ -201,6 +251,16 @@ class MainWindow(QMainWindow):
         toolbar.setStyleSheet(f"QToolBar {{ background-color: {theme_manager.get_color('card')}; border-bottom: 1px solid {theme_manager.get_color('border')}; spacing: 5px; }} QToolButton {{ background-color: {theme_manager.get_color('primary')}; color: white; border-radius: 4px; padding: 8px 16px; margin: 3px; font-weight: bold; min-height: 36px; }} QToolButton:hover {{ background-color: {theme_manager.get_color('primary_hover')}; border: 1px solid {theme_manager.get_color('border')}; }} QToolButton:pressed {{ background-color: {theme_manager.get_color('primary_active')}; }} QToolButton:disabled {{ background-color: {theme_manager.get_color('disabled')}; color: {theme_manager.get_color('text_secondary')}; }}")
         self.addToolBar(toolbar)
         
+        # Botón de administración (solo admin)
+        # DEBUG: Mostrar el usuario actual antes de mostrar el botón Admin
+        print(f"[DEBUG] Usuario actual en toolbar: {getattr(self.current_user, 'username', None)}")
+        # Mostrar botón Admin SOLO si el usuario es 'admin' (username literal)
+        if self.current_user and getattr(self.current_user, 'username', None) == 'admin':
+            admin_action = QAction("Admin", self)
+            admin_action.setToolTip("Gestión de usuarios, roles y permisos")
+            admin_action.triggered.connect(self.show_admin_panel)
+            toolbar.addAction(admin_action)
+        
         # Botón Nuevo Vencimiento
         new_expiration_action = QAction("Nuevo", self)
         new_expiration_action.setToolTip("Crear nuevo vencimiento")
@@ -238,12 +298,14 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         
         # Botón Cambiar Tema (a la derecha)
+        # Botón de cambio de tema (claro/oscuro)
         theme_button = QPushButton()
         theme_button.setFixedSize(30, 30)
-        theme_button.setToolTip("Cambiar tema")
-        theme_button.clicked.connect(theme_manager.toggleTheme)
+        theme_button.setToolTip("Cambiar tema claro/oscuro")
+        theme_button.clicked.connect(self.handle_theme_toggle)
         self.update_theme_button(theme_button)
         theme_manager.themeChanged.connect(lambda: self.update_theme_button(theme_button))
+        theme_manager.themeChanged.connect(self.update_welcome_label_style)  # Refuerzo explícito
         theme_button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
         toolbar.addWidget(theme_button)
     
@@ -257,11 +319,17 @@ class MainWindow(QMainWindow):
     
     def update_theme_button(self, button):
         """Actualiza el ícono del botón de tema según el modo actual"""
+        # El ícono muestra a qué modo vas a cambiar:
         if theme_manager.darkMode:
-            button.setText("☀️")
+            button.setText("☀️")  # Cambiar a claro
         else:
-            button.setText("🌙")
+            button.setText("🌙")  # Cambiar a oscuro
         button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
+
+    def handle_theme_toggle(self):
+        """Cambia el tema y actualiza explícitamente el label de bienvenida"""
+        theme_manager.toggleTheme()
+        self.update_welcome_label_style()  # Garantiza actualización inmediata
     
     def update_toolbar_style(self):
         """Actualiza los estilos de la barra de herramientas"""
@@ -271,7 +339,33 @@ class MainWindow(QMainWindow):
     def update_theme(self):
         """Actualiza el tema de la aplicación"""
         # El tema se aplica automáticamente a través del ThemeManager
+        self.update_header_theme()
+        # Si se agregan más labels, actualizarlos aquí también
+        # Llama a otros métodos de actualización si es necesario
         pass
+
+    def update_header_theme(self):
+        """Actualiza los estilos del header y sus labels según el tema actual"""
+        if hasattr(self, 'header'):
+            self.header.setStyleSheet(f"background-color: {theme_manager.get_color('card')} !important;")
+        self.update_welcome_label_style()
+        if hasattr(self, 'user_info'):
+            self.user_info.setStyleSheet(f"font-size: 14px; color: {theme_manager.get_color('text_secondary')} !important;")
+
+    def update_welcome_label_style(self):
+        # Usar QPalette para establecer color de texto según theme manager, evitando sobrescritura QSS
+        if hasattr(self, 'welcome_label'):
+            color_qt = QColor(theme_manager.get_color('text'))
+            pal = self.welcome_label.palette()
+            pal.setColor(QPalette.WindowText, color_qt)
+            self.welcome_label.setPalette(pal)
+            # Aplicar sólo estilo de fuente (sin color)
+            self.welcome_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+            self.welcome_label.setAutoFillBackground(False)
+            # Forzar repintado
+            self.welcome_label.repaint()
+            if hasattr(self, 'header'):
+                self.header.repaint()
     
     def create_new_expiration(self):
         """Abre el formulario para crear un nuevo vencimiento"""
@@ -324,6 +418,11 @@ class MainWindow(QMainWindow):
         """Muestra el diálogo de configuraciones de usuario"""
         dialog = UserSettingsDialog(self.current_user, parent=self)
         dialog.exec()
+
+    def force_admin_ui_refresh(self):
+        """Método público para forzar refresco de menú y toolbar desde fuera de la clase"""
+        self.refresh_admin_ui()
+
     
     def show_about_dialog(self):
         """Muestra el diálogo 'Acerca de'"""
@@ -331,7 +430,7 @@ class MainWindow(QMainWindow):
             self, "Acerca de NewAgenda",
             "<h3>NewAgenda v4.0</h3>"
             "<p>Sistema de Gestión de Vencimientos y Notificaciones</p>"
-            "<p>© 2025 - Todos los derechos reservados</p>"
+            "<p> 2025 - Todos los derechos reservados</p>"
         )
     
     def refresh_views(self):
@@ -339,6 +438,10 @@ class MainWindow(QMainWindow):
         self.integral_dashboard.refresh_data()
         self.sabana_dashboard.refresh_data()
         self.expiration_list.refresh_data()
+        if self.admin_panel:
+            self.admin_panel.tabs.widget(0).update() # Usuarios
+            self.admin_panel.tabs.widget(1).update() # Roles
+            self.admin_panel.tabs.widget(2).update() # Permisos
     
     def logout(self):
         """Cierra la sesión actual"""

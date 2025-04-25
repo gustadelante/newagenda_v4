@@ -106,8 +106,11 @@ class ExpirationController:
             if 'notes' in data:
                 expiration.notes = data['notes']
             
+            # Obtener el ID del usuario que realiza la actualización
+            user_id = data.get('created_by', None)
+            
             # Guardar cambios
-            if expiration.save():
+            if expiration.save(user_id):
                 return True, ""
             else:
                 return False, "Error al guardar los cambios"
@@ -136,45 +139,44 @@ class ExpirationController:
         except Exception as e:
             return False, f"Error al eliminar vencimiento: {e}"
     
-    def renew_expiration(self, expiration_id: int, new_date: date, notes: str = "") -> Tuple[bool, Optional[int], str]:
+    def renew_expiration(self, expiration_id: int, new_date: date, user_id: int, notes: str = "") -> Tuple[bool, Optional[int], str]:
         """
-        Renueva un vencimiento, marcándolo como renovado y creando uno nuevo
+        Renueva un vencimiento, actualizando la fecha de vencimiento
         
         Args:
             expiration_id: ID del vencimiento a renovar
             new_date: Nueva fecha de vencimiento
+            user_id: ID del usuario que realiza la renovación
             notes: Notas sobre la renovación
             
         Returns:
-            Tuple con éxito (bool), ID del nuevo vencimiento y mensaje de error si hubo fallo
+            Tuple con éxito (bool), ID del vencimiento renovado y mensaje de error si hubo fallo
         """
         try:
             expiration = Expiration.get_by_id(expiration_id)
             if not expiration:
                 return False, None, "Vencimiento no encontrado"
+        
+            # Validar que la fecha de renovación sea posterior a la fecha actual
+            if new_date <= date.today():
+                return False, None, f"La fecha de renovación debe ser posterior a la fecha actual del sistema ({date.today().strftime('%d/%m/%Y')})"
                 
-            if expiration.renew(new_date, notes):
-                # Obtener el ID del nuevo vencimiento (último creado)
-                from app.core.database.connection import DatabaseConnection
-                db = DatabaseConnection()
-                result = db.execute_query("SELECT LAST_INSERT_ID() as id")
-                if result:
-                    new_id = result[0]['id']
-                    return True, new_id, ""
-                else:
-                    return True, None, "No se pudo obtener el ID del nuevo vencimiento"
+            if expiration.renew(new_date, notes, user_id):
+                # Devolver el mismo ID ya que solo se actualizó el registro
+                return True, expiration_id, ""
             else:
                 return False, None, "Error al renovar el vencimiento"
         except Exception as e:
             return False, None, f"Error al renovar vencimiento: {e}"
     
-    def change_expiration_status(self, expiration_id: int, status_id: int, notes: str = "") -> Tuple[bool, str]:
+    def change_expiration_status(self, expiration_id: int, status_id: int, user_id: int, notes: str = "") -> Tuple[bool, str]:
         """
         Cambia el estado de un vencimiento
         
         Args:
             expiration_id: ID del vencimiento
             status_id: ID del nuevo estado
+            user_id: ID del usuario que realiza el cambio
             notes: Notas sobre el cambio de estado
             
         Returns:
@@ -185,7 +187,7 @@ class ExpirationController:
             if not expiration:
                 return False, "Vencimiento no encontrado"
                 
-            if expiration.change_status(status_id, notes):
+            if expiration.change_status(status_id, notes, user_id):
                 return True, ""
             else:
                 return False, "Error al cambiar el estado del vencimiento"
@@ -444,6 +446,23 @@ class ExpirationController:
             return True, [alert.to_dict() for alert in alerts], ""
         except Exception as e:
             return False, [], f"Error al obtener alertas: {e}"
+    
+    def get_expiration_history(self, expiration_id: int) -> Tuple[bool, List[Dict[str, Any]], str]:
+        """
+        Obtiene el historial de cambios para un vencimiento
+        
+        Args:
+            expiration_id: ID del vencimiento
+            
+        Returns:
+            Tuple con éxito (bool), lista de registros históricos y mensaje de error si hubo fallo
+        """
+        try:
+            expiration = Expiration(id=expiration_id)
+            history = expiration.get_history()
+            return True, history, ""
+        except Exception as e:
+            return False, [], f"Error al obtener historial: {e}"
     
     def process_due_alerts(self) -> Tuple[bool, int, str]:
         """

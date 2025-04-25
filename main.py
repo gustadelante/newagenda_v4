@@ -3,14 +3,15 @@
 
 import sys
 import os
-from PySide6.QtWidgets import QApplication, QSplashScreen, QStyleFactory
+from PySide6.QtWidgets import QApplication, QStyleFactory
+from app.widgets.database_init_splash import DatabaseInitSplash
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QPixmap, QIcon
 
 from app.core.database.schema import initialize_database
 from app.authentication.controllers.auth_controller import AuthController
 from app.authentication.views.login_window import LoginWindow
-from app.main_window import MainWindow
+from app.views.main_window import MainWindow
 from app.core.utils.theme_manager import theme_manager
 
 
@@ -44,18 +45,14 @@ class NewAgendaApp:
     def init_database(self):
         """Inicializa la base de datos"""
         try:
-            # Mostrar splash screen durante la inicialización
-            splash_pixmap = QPixmap(300, 200)
-            splash_pixmap.fill(Qt.white)
-            splash = QSplashScreen(splash_pixmap)
-            splash.showMessage("Inicializando base de datos...", 
-                              Qt.AlignCenter | Qt.AlignBottom, Qt.black)
+            # Mostrar splash screen moderno durante la inicialización
+            splash = DatabaseInitSplash()
             splash.show()
             self.app.processEvents()
-            
+
             # Inicializar base de datos
             initialize_database()
-            
+
             # Cerrar splash después de un breve retraso
             QTimer.singleShot(1000, splash.close)
         except Exception as e:
@@ -93,10 +90,13 @@ class NewAgendaApp:
     def show_main_window(self):
         """Muestra la ventana principal"""
         if not self.main_window:
-            self.main_window = MainWindow()
+            current_user = self.login_window.auth_controller.get_current_user()
+            self.main_window = MainWindow(current_user=current_user)
             self.main_window.logoutRequested.connect(self.show_login_window)
         
         self.main_window.show()
+        # Forzar refresco de menú y toolbar de administración
+        self.main_window.force_admin_ui_refresh()
 
 
 if __name__ == "__main__":

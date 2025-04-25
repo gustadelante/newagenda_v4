@@ -540,8 +540,12 @@ class SabanaDashboard(QWidget):
             priority = exp['priority']['name'] if exp['priority'] else ""
             priority_item = QTableWidgetItem(priority)
             if exp['priority']:
-                priority_item.setBackground(QColor(exp['priority']['color']))
-                priority_item.setForeground(QColor("white"))
+                # Crítica y Alta en rojo, Media y Baja igual (negro)
+                if priority.lower() in ("alta", "crítica", "critica"):
+                    priority_item.setForeground(QColor("#dc3545"))
+                else:
+                    # Media y Baja: color de texto por defecto del sistema/tema
+                    priority_item.setForeground(self.expirations_table.palette().color(self.expirations_table.foregroundRole()))
             self.expirations_table.setItem(i, 3, priority_item)
             
             # Sector

@@ -6,6 +6,28 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor, QIcon, QAction
 from PySide6.QtCore import Qt, QDate, Signal, Slot
 
+
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Clase personalizada para ordenar QTableWidgetItem como valores numéricos en lugar de texto."""
+    
+    def __init__(self, value):
+        # Guardar el valor numérico
+        self.numeric_value = int(value) if value.lstrip('-').isdigit() else 0
+        # Inicializar el QTableWidgetItem con el texto
+        super().__init__(value)
+    
+    def __lt__(self, other):
+        # Implementar la comparación 'menor que' para ordenar numéricamente
+        try:
+            # Si el otro objeto es NumericTableWidgetItem, comparar los valores numéricos
+            if isinstance(other, NumericTableWidgetItem):
+                return self.numeric_value < other.numeric_value
+            # Si es otro tipo de QTableWidgetItem, intentar convertir su texto a número
+            return self.numeric_value < int(other.text() if other.text().lstrip('-').isdigit() else 0)
+        except (ValueError, TypeError):
+            # En caso de error, usar la comparación por defecto
+            return super().__lt__(other)
+
 from datetime import date, datetime, timedelta
 
 from ...controllers.expiration_controller import ExpirationController
@@ -302,9 +324,18 @@ class ExpirationListView(QWidget):
     
     def update_table(self, expirations):
         """Actualiza la tabla con los vencimientos filtrados"""
+        # Desactivar temporalmente el ordenamiento para evitar problemas durante la actualización
+        sorting_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        
+        # Limpiar y establecer el número de filas
         self.table.clearContents()
         self.table.setRowCount(len(expirations))
         
+        # Actualizar la etiqueta de estado para mostrar cuántos vencimientos se están mostrando
+        self.status_label.setText(f"Mostrando: {len(expirations)} vencimientos")
+        
+        # Llenar la tabla con los datos
         for i, exp in enumerate(expirations):
             # ID
             id_item = QTableWidgetItem(str(exp['id']))
@@ -319,43 +350,74 @@ class ExpirationListView(QWidget):
             self.table.setItem(i, 2, concept_item)
             
             # Responsable
-            responsible = exp['responsible']['full_name'] if exp['responsible'] else ""
+            responsible = ""
+            if 'responsible' in exp and exp['responsible']:
+                responsible = exp['responsible']['full_name']
             responsible_item = QTableWidgetItem(responsible)
             self.table.setItem(i, 3, responsible_item)
             
             # Prioridad
-            priority = exp['priority']['name'] if exp['priority'] else ""
+            priority = ""
             priority_item = QTableWidgetItem(priority)
-            if exp['priority']:
-                priority_item.setBackground(QColor(exp['priority']['color']))
-                priority_item.setForeground(QColor("white"))
+            if 'priority' in exp and exp['priority']:
+                priority = exp['priority']['name']
+                priority_item.setText(priority)
+                
+                # Crítica y Alta en rojo, Media y Baja igual (negro)
+                if priority.lower() in ("alta", "crítica", "critica"):
+                    priority_item.setForeground(QColor("#dc3545"))
+                elif priority.lower() in ("media", "baja"):
+                    # Detectar si el fondo es oscuro
+                    bg_color = self.table.palette().color(self.table.backgroundRole())
+                    luma = 0.2126 * bg_color.red() + 0.7152 * bg_color.green() + 0.0722 * bg_color.blue()
+                    color = QColor("white") if luma < 128 else QColor("black")
+                    priority_item.setForeground(color)
             self.table.setItem(i, 4, priority_item)
             
             # Sector
-            sector = exp['sector']['name'] if exp['sector'] else ""
+            sector = ""
+            if 'sector' in exp and exp['sector']:
+                sector = exp['sector']['name']
             sector_item = QTableWidgetItem(sector)
             self.table.setItem(i, 5, sector_item)
             
             # Estado
-            status = exp['status']['name'] if exp['status'] else ""
+            status = ""
             status_item = QTableWidgetItem(status)
-            if exp['status']:
+            if 'status' in exp and exp['status']:
+                status = exp['status']['name']
+                status_item.setText(status)
                 status_item.setBackground(QColor(exp['status']['color']))
-                status_item.setForeground(QColor("white"))
+                # Verificar si es el estado "En proceso" para asegurar contraste adecuado
+                if exp['status']['name'] == "En proceso":
+                    status_item.setForeground(QColor("black"))
+                else:
+                    status_item.setForeground(QColor("white"))
             self.table.setItem(i, 6, status_item)
             
             # Días hasta vencimiento
             days_until = exp['days_until']
-            days_item = QTableWidgetItem(str(days_until))
+            # Usar la clase personalizada NumericTableWidgetItem para ordenamiento numérico correcto
+            days_item = NumericTableWidgetItem(str(days_until))
             
             if days_until < 0:
-                days_item.setForeground(QColor("#dc3545"))  # Rojo
-            elif days_until < 7:
-                days_item.setForeground(QColor("#ffc107"))  # Amarillo
+                # Vencido: Rojo
+                days_item.setForeground(QColor("#dc3545"))
+            elif days_until <= 7 and days_until >= 0:
+                # Faltan 7 días o menos: Naranja
+                days_item.setForeground(QColor("#fd7e14"))  # Naranja
             else:
-                days_item.setForeground(QColor("#28a745"))  # Verde
+                # Más de 7 días: Verde
+                days_item.setForeground(QColor("#28a745"))
                 
             self.table.setItem(i, 7, days_item)
+        
+        # Restaurar el ordenamiento si estaba habilitado
+        self.table.setSortingEnabled(sorting_enabled)
+        
+        # Asegurar que la tabla se actualice visualmente
+        # No llamar a update() sin argumentos ya que requiere un QRect
+        self.table.viewport().update()
     
     def on_row_double_clicked(self, index):
         """Maneja el evento de doble clic en una fila"""
@@ -495,7 +557,7 @@ class ExpirationListView(QWidget):
             new_date = date_edit.date().toPython()
             notes = notes_edit.text()
             
-            success, new_id, message = self.expiration_controller.renew_expiration(
+            success, updated_id, message = self.expiration_controller.renew_expiration(
                 expiration_id, new_date, notes
             )
             
@@ -503,7 +565,7 @@ class ExpirationListView(QWidget):
                 self.refresh_data()
                 QMessageBox.information(
                     self, "Éxito", 
-                    f"Vencimiento renovado correctamente. Nuevo ID: {new_id}"
+                    f"Vencimiento renovado correctamente."
                 )
             else:
                 QMessageBox.critical(

@@ -53,6 +53,7 @@ class DatabaseSchema:
             self._create_priorities_table()
             self._create_expiration_statuses_table()
             self._create_expirations_table()
+            self._create_expiration_history_table()  # Añadida la tabla de historial de vencimientos
             self._create_alerts_table()
             self._create_alert_history_table()
             self._create_document_categories_table()
@@ -97,6 +98,33 @@ class DatabaseSchema:
             name VARCHAR(50) NOT NULL UNIQUE,
             description TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.db.execute_query(query, commit=True)
+        self._create_permissions_table()
+        self._create_role_permissions_table()
+    
+    def _create_permissions_table(self):
+        """Crea la tabla de permisos"""
+        query = """
+        CREATE TABLE IF NOT EXISTS permissions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        self.db.execute_query(query, commit=True)
+    
+    def _create_role_permissions_table(self):
+        """Crea la tabla de relación entre roles y permisos"""
+        query = """
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            role_id INT NOT NULL,
+            permission_id INT NOT NULL,
+            PRIMARY KEY (role_id, permission_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+            FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
         )
         """
         self.db.execute_query(query, commit=True)
@@ -305,6 +333,23 @@ class DatabaseSchema:
         """
         self.db.execute_query(query, commit=True)
     
+    def _create_expiration_history_table(self):
+        """Crea la tabla de historial de vencimientos"""
+        query = """
+        CREATE TABLE IF NOT EXISTS expiration_history (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            expiration_id INT NOT NULL,
+            action_type VARCHAR(50) NOT NULL,
+            description VARCHAR(255) NOT NULL,
+            notes TEXT,
+            user_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expiration_id) REFERENCES expirations(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+        self.db.execute_query(query, commit=True)
+    
     def _populate_initial_data(self):
         """Pobla las tablas con datos iniciales"""
         # Roles
@@ -319,6 +364,25 @@ class DatabaseSchema:
                 "INSERT IGNORE INTO roles (name, description) VALUES (?, ?)",
                 role, commit=True
             )
+        # Permisos
+        permissions = [
+            ('manage_users', 'Gestionar usuarios'),
+            ('manage_roles', 'Gestionar roles'),
+            ('manage_permissions', 'Gestionar permisos'),
+            ('view_dashboard', 'Ver dashboard'),
+            ('edit_expirations', 'Editar vencimientos'),
+            ('view_expirations', 'Ver vencimientos')
+        ]
+        for perm in permissions:
+            self.db.execute_query(
+                "INSERT IGNORE INTO permissions (name, description) VALUES (?, ?)",
+                perm, commit=True
+            )
+        # Asignar todos los permisos al rol admin
+        self.db.execute_query(
+            "INSERT IGNORE INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'admin'",
+            commit=True
+        )
         
         # Sectores
         sectors = [

@@ -302,9 +302,18 @@ class ExpirationListView(QWidget):
     
     def update_table(self, expirations):
         """Actualiza la tabla con los vencimientos filtrados"""
+        # Desactivar temporalmente el ordenamiento para evitar problemas durante la actualización
+        sorting_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        
+        # Limpiar y establecer el número de filas
         self.table.clearContents()
         self.table.setRowCount(len(expirations))
         
+        # Actualizar la etiqueta de estado para mostrar cuántos vencimientos se están mostrando
+        self.status_label.setText(f"Mostrando: {len(expirations)} vencimientos")
+        
+        # Llenar la tabla con los datos
         for i, exp in enumerate(expirations):
             # ID
             id_item = QTableWidgetItem(str(exp['id']))
@@ -319,29 +328,41 @@ class ExpirationListView(QWidget):
             self.table.setItem(i, 2, concept_item)
             
             # Responsable
-            responsible = exp['responsible']['full_name'] if exp['responsible'] else ""
+            responsible = ""
+            if 'responsible' in exp and exp['responsible']:
+                responsible = exp['responsible']['full_name']
             responsible_item = QTableWidgetItem(responsible)
             self.table.setItem(i, 3, responsible_item)
             
             # Prioridad
-            priority = exp['priority']['name'] if exp['priority'] else ""
+            priority = ""
             priority_item = QTableWidgetItem(priority)
-            if exp['priority']:
+            if 'priority' in exp and exp['priority']:
+                priority = exp['priority']['name']
+                priority_item.setText(priority)
                 priority_item.setBackground(QColor(exp['priority']['color']))
                 priority_item.setForeground(QColor("white"))
             self.table.setItem(i, 4, priority_item)
             
             # Sector
-            sector = exp['sector']['name'] if exp['sector'] else ""
+            sector = ""
+            if 'sector' in exp and exp['sector']:
+                sector = exp['sector']['name']
             sector_item = QTableWidgetItem(sector)
             self.table.setItem(i, 5, sector_item)
             
             # Estado
-            status = exp['status']['name'] if exp['status'] else ""
+            status = ""
             status_item = QTableWidgetItem(status)
-            if exp['status']:
+            if 'status' in exp and exp['status']:
+                status = exp['status']['name']
+                status_item.setText(status)
                 status_item.setBackground(QColor(exp['status']['color']))
-                status_item.setForeground(QColor("white"))
+                # Verificar si es el estado "En proceso" para asegurar contraste adecuado
+                if exp['status']['name'] == "En proceso":
+                    status_item.setForeground(QColor("black"))
+                else:
+                    status_item.setForeground(QColor("white"))
             self.table.setItem(i, 6, status_item)
             
             # Días hasta vencimiento
@@ -356,6 +377,13 @@ class ExpirationListView(QWidget):
                 days_item.setForeground(QColor("#28a745"))  # Verde
                 
             self.table.setItem(i, 7, days_item)
+        
+        # Restaurar el ordenamiento si estaba habilitado
+        self.table.setSortingEnabled(sorting_enabled)
+        
+        # Asegurar que la tabla se actualice visualmente
+        # No llamar a update() sin argumentos ya que requiere un QRect
+        self.table.viewport().update()
     
     def on_row_double_clicked(self, index):
         """Maneja el evento de doble clic en una fila"""
@@ -495,7 +523,7 @@ class ExpirationListView(QWidget):
             new_date = date_edit.date().toPython()
             notes = notes_edit.text()
             
-            success, new_id, message = self.expiration_controller.renew_expiration(
+            success, updated_id, message = self.expiration_controller.renew_expiration(
                 expiration_id, new_date, notes
             )
             
@@ -503,7 +531,7 @@ class ExpirationListView(QWidget):
                 self.refresh_data()
                 QMessageBox.information(
                     self, "Éxito", 
-                    f"Vencimiento renovado correctamente. Nuevo ID: {new_id}"
+                    f"Vencimiento renovado correctamente."
                 )
             else:
                 QMessageBox.critical(

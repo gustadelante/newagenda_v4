@@ -96,16 +96,18 @@ class User:
     
     def get_roles(self) -> List[Dict[str, Any]]:
         """Obtiene los roles asignados al usuario"""
+        if hasattr(self, 'roles') and self.roles:
+            return self.roles
         if not self.id:
             return []
-        
         query = """
         SELECT r.id, r.name, r.description
         FROM roles r
         JOIN user_roles ur ON r.id = ur.role_id
         WHERE ur.user_id = ?
         """
-        return self.db.execute_query(query, (self.id,))
+        self.roles = self.db.execute_query(query, (self.id,))
+        return self.roles
     
     def has_role(self, role_name: str) -> bool:
         """Verifica si el usuario tiene un rol específico"""
@@ -298,6 +300,8 @@ class User:
                     phone=user_data['phone'],
                     is_active=user_data['is_active']
                 )
+                # Cargar roles inmediatamente
+                user.roles = user.get_roles()
                 return user
         
         return None

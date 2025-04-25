@@ -29,22 +29,36 @@ class Expiration:
         self._status = None
         self._created_by_user = None
     
-    def save(self) -> bool:
-        """Guarda el vencimiento en la base de datos"""
+    def save(self, user_id=None) -> bool:
+        """Guarda el vencimiento en la base de datos
+        
+        Args:
+            user_id: ID del usuario que realiza la operación (opcional)
+        """
         try:
             if self.id:
+                # Obtener los datos del vencimiento antes de actualizarlo
+                original_expiration = None
+                try:
+                    original_query = "SELECT * FROM expirations WHERE id = %s"
+                    result = self.db.execute_query(original_query, (self.id,))
+                    if result:
+                        original_expiration = result[0]
+                except Exception as e:
+                    print(f"Error al obtener datos originales del vencimiento: {e}")
+                
                 # Actualizar vencimiento existente
                 query = """
                 UPDATE expirations SET
-                    expiration_date = ?,
-                    concept = ?,
-                    responsible_id = ?,
-                    priority_id = ?,
-                    sector_id = ?,
-                    status_id = ?,
-                    notes = ?,
+                    expiration_date = %s,
+                    concept = %s,
+                    responsible_id = %s,
+                    priority_id = %s,
+                    sector_id = %s,
+                    status_id = %s,
+                    notes = %s,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = %s
                 """
                 params = (
                     self.expiration_date, self.concept, self.responsible_id,
@@ -52,13 +66,67 @@ class Expiration:
                     self.notes, self.id
                 )
                 self.db.execute_query(query, params, fetch=False, commit=True)
+                
+                # Generar descripción detallada de los cambios
+                if original_expiration:
+                    changes = []
+                    
+                    # Verificar cambios en cada campo
+                    if str(original_expiration.get('expiration_date')) != str(self.expiration_date):
+                        changes.append(f"Fecha de vencimiento: {original_expiration.get('expiration_date')} → {self.expiration_date}")
+                    
+                    if original_expiration.get('concept') != self.concept:
+                        changes.append(f"Concepto: {original_expiration.get('concept')} → {self.concept}")
+                    
+                    if str(original_expiration.get('responsible_id')) != str(self.responsible_id):
+                        # Obtener nombres de responsables
+                        old_responsible = self._get_responsible_name_by_id(original_expiration.get('responsible_id'))
+                        new_responsible = self._get_responsible_name_by_id(self.responsible_id)
+                        changes.append(f"Responsable: {old_responsible} → {new_responsible}")
+                    
+                    if str(original_expiration.get('priority_id')) != str(self.priority_id):
+                        # Obtener nombres de prioridades
+                        old_priority = self._get_priority_name_by_id(original_expiration.get('priority_id'))
+                        new_priority = self._get_priority_name_by_id(self.priority_id)
+                        changes.append(f"Prioridad: {old_priority} → {new_priority}")
+                    
+                    if str(original_expiration.get('sector_id')) != str(self.sector_id):
+                        # Obtener nombres de sectores
+                        old_sector = self._get_sector_name_by_id(original_expiration.get('sector_id'))
+                        new_sector = self._get_sector_name_by_id(self.sector_id)
+                        changes.append(f"Sector: {old_sector} → {new_sector}")
+                    
+                    if str(original_expiration.get('status_id')) != str(self.status_id):
+                        # Obtener nombres de estados
+                        old_status = self._get_status_name_by_id(original_expiration.get('status_id'))
+                        new_status = self._get_status_name_by_id(self.status_id)
+                        changes.append(f"Estado: {old_status} → {new_status}")
+                    
+                    if original_expiration.get('notes') != self.notes:
+                        changes.append(f"Notas actualizadas")
+                    
+                    # Si hay cambios, registrarlos
+                    if changes:
+                        description = "Cambios en el vencimiento: " + ", ".join(changes)
+                    else:
+                        description = "Información del vencimiento actualizada (sin cambios detectados)"
+                else:
+                    description = "Información del vencimiento actualizada"
+                
+                # Registrar actualización en el historial
+                self._add_history_record(
+                    "Actualización", 
+                    description, 
+                    self.notes, 
+                    user_id  # Usar el ID del usuario proporcionado
+                )
             else:
                 # Crear nuevo vencimiento
                 query = """
                 INSERT INTO expirations (
                     expiration_date, concept, responsible_id, priority_id,
                     sector_id, status_id, notes, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 params = (
                     self.expiration_date, self.concept, self.responsible_id,
@@ -76,6 +144,15 @@ class Expiration:
                     
                     # Crear alerta por defecto (30 días antes)
                     self.create_default_alert()
+                    
+                    # Registrar creación en el historial con más detalle
+                    description = f"Nuevo vencimiento creado: {self.concept} - Vence: {self.expiration_date}"
+                    self._add_history_record(
+                        "Creación", 
+                        description, 
+                        self.notes, 
+                        user_id if user_id is not None else self.created_by
+                    )
             
             return True
         except Exception as e:
@@ -211,90 +288,155 @@ class Expiration:
         SELECT ah.* 
         FROM alert_history ah
         JOIN alerts a ON ah.alert_id = a.id
-        WHERE a.expiration_id = ?
+        WHERE a.expiration_id = %s
         ORDER BY ah.alert_date DESC
         """
         return self.db.execute_query(query, (self.id,))
-    
-    def renew(self, new_expiration_date: date, notes: str = "") -> bool:
-        """Renueva un vencimiento, marcándolo como renovado y creando uno nuevo"""
+        
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Obtiene el historial de cambios para este vencimiento"""
         if not self.id:
-            return False
+            return []
             
+        query = """
+        SELECT h.*, u.full_name as user_name
+        FROM expiration_history h
+        LEFT JOIN users u ON h.user_id = u.id
+        WHERE h.expiration_id = %s
+        ORDER BY h.created_at DESC
+        """
+        return self.db.execute_query(query, (self.id,))
+    
+    def renew(self, new_date: date, notes: str = "", user_id: int = None) -> bool:
+        """
+        Renueva el vencimiento, actualizando la fecha
+        
+        Args:
+            new_date: Nueva fecha de vencimiento
+            notes: Notas sobre la renovación
+            user_id: ID del usuario que realiza la renovación
+            
+        Returns:
+            True si se renovó correctamente, False en caso contrario
+        """
         try:
-            # Iniciar transacción
-            self.db.begin_transaction()
+            # Validar que la fecha sea posterior a la actual
+            if new_date <= date.today():
+                return False
+                
+            # Actualizar la fecha de vencimiento
+            self.expiration_date = new_date
             
-            # Marcar este vencimiento como renovado
-            status_renovado = self.db.execute_query(
-                "SELECT id FROM expiration_statuses WHERE name = 'Renovado'"
+            # Cambiar estado a "Renovado"
+            status_id = self._get_status_id_by_name("Renovado")
+            if status_id:
+                self.status_id = status_id
+            
+            # Registrar el cambio en el historial
+            self._add_history_record(
+                "Renovación", 
+                f"Vencimiento renovado para el {new_date.strftime('%d/%m/%Y')}", 
+                notes,
+                user_id
             )
             
-            if status_renovado:
-                status_id = status_renovado[0]['id']
-                
-                # Actualizar estado
-                old_status = self.status_id
-                self.status_id = status_id
-                
-                # Agregar nota de renovación
-                if notes:
-                    if self.notes:
-                        self.notes += f"\n[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
-                    else:
-                        self.notes = f"[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
-                
-                # Guardar cambios
-                self.save()
-                
-                # Crear nuevo vencimiento
-                new_expiration = Expiration(
-                    expiration_date=new_expiration_date,
-                    concept=self.concept,
-                    responsible_id=self.responsible_id,
-                    priority_id=self.priority_id,
-                    sector_id=self.sector_id,
-                    status_id=old_status,  # Usar el estado original
-                    notes=f"Continuación del vencimiento anterior (ID: {self.id})",
-                    created_by=self.created_by
-                )
-                
-                if new_expiration.save():
-                    # Confirmar transacción
-                    self.db.commit()
-                    return True
-                else:
-                    # Revertir transacción
-                    self.db.rollback()
-                    return False
-            else:
-                self.db.rollback()
-                return False
+            # Guardar cambios
+            return self.save()
         except Exception as e:
             print(f"Error al renovar vencimiento: {e}")
-            self.db.rollback()
             return False
     
-    def change_status(self, new_status_id: int, notes: str = "") -> bool:
-        """Cambia el estado del vencimiento"""
-        if not self.id:
-            return False
+    def change_status(self, status_id: int, notes: str = "", user_id: int = None) -> bool:
+        """
+        Cambia el estado del vencimiento
+        
+        Args:
+            status_id: ID del nuevo estado
+            notes: Notas sobre el cambio
+            user_id: ID del usuario que realiza el cambio
             
+        Returns:
+            True si se cambió correctamente, False en caso contrario
+        """
         try:
-            old_status = self.status_id
-            self.status_id = new_status_id
+            # Validar que el estado sea diferente al actual
+            if self.status_id == status_id:
+                return True
+                
+            # Si el estado es "Renovado", validar que la fecha sea posterior a la actual
+            if self._get_status_name_by_id(status_id) == "Renovado" and self.expiration_date <= date.today():
+                print("La fecha de vencimiento debe ser posterior a la fecha actual para cambiar a estado Renovado")
+                return False
+                
+            # Obtener nombre del estado anterior y nuevo
+            old_status = self._get_status_name_by_id(self.status_id)
+            new_status = self._get_status_name_by_id(status_id)
             
-            # Agregar nota de cambio de estado
-            if notes:
-                status_name = self.get_status_name()
-                if self.notes:
-                    self.notes += f"\n[{datetime.now().strftime('%Y-%m-%d')}] Cambio a '{status_name}': {notes}"
-                else:
-                    self.notes = f"[{datetime.now().strftime('%Y-%m-%d')}] Cambio a '{status_name}': {notes}"
+            # Actualizar estado
+            self.status_id = status_id
             
+            # Registrar el cambio en el historial
+            self._add_history_record(
+                "Cambio de estado", 
+                f"Estado cambiado de '{old_status}' a '{new_status}'", 
+                notes,
+                user_id
+            )
+            
+            # Guardar cambios
             return self.save()
         except Exception as e:
             print(f"Error al cambiar estado: {e}")
+            return False
+    
+    def _add_history_record(self, action_type: str, description: str, notes: str = "", user_id: int = None) -> bool:
+        """
+        Agrega un registro al historial de cambios
+        
+        Args:
+            action_type: Tipo de acción (Creación, Modificación, etc.)
+            description: Descripción del cambio
+            notes: Notas adicionales
+            user_id: ID del usuario que realizó el cambio
+            
+        Returns:
+            True si se agregó correctamente, False en caso contrario
+        """
+        try:
+            # Validar que el ID del vencimiento exista
+            if not self.id:
+                print("Error: No se puede registrar historial sin ID de vencimiento")
+                return False
+                
+            # Corregir la ruta de importación para DBManager
+            from app.core.database.db_manager import DBManager 
+            
+            # Obtener conexión a la base de datos
+            db = DBManager().get_connection()
+            cursor = db.cursor()
+            
+            # Preparar los valores para la consulta
+            # MariaDB/MySQL usa %s como marcador de posición, no ?
+            query = """
+                INSERT INTO expiration_history 
+                (expiration_id, action_type, description, notes, user_id, created_at) 
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """
+            
+            # Mostrar la consulta y los parámetros para depuración
+            print(f"Ejecutando consulta: {query}")
+            print(f"Parámetros: ID={self.id}, Acción={action_type}, Desc={description}, Notas={notes}, User={user_id}")
+            
+            # Ejecutar la consulta
+            cursor.execute(query, (self.id, action_type, description, notes, user_id))
+            db.commit()
+            
+            print(f"Registro de historial agregado correctamente para el vencimiento {self.id}")
+            return True
+        except Exception as e:
+            print(f"Error al agregar registro al historial: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def get_responsible(self) -> Optional[Dict[str, Any]]:
@@ -512,35 +654,35 @@ class Expiration:
         
         # Agregar condiciones según los parámetros
         if search_text:
-            query += " AND concept LIKE ?"
-            params.append(f"%{search_text}%")
+            query += " AND (concept LIKE %s OR notes LIKE %s)"
+            params.extend([f'%{search_text}%', f'%{search_text}%'])
             
-        if responsible_id is not None:
-            query += " AND responsible_id = ?"
+        if responsible_id:
+            query += " AND responsible_id = %s"
             params.append(responsible_id)
             
-        if priority_id is not None:
-            query += " AND priority_id = ?"
+        if priority_id:
+            query += " AND priority_id = %s"
             params.append(priority_id)
             
-        if sector_id is not None:
-            query += " AND sector_id = ?"
+        if sector_id:
+            query += " AND sector_id = %s"
             params.append(sector_id)
             
-        if status_id is not None:
-            query += " AND status_id = ?"
+        if status_id:
+            query += " AND status_id = %s"
             params.append(status_id)
             
         if start_date:
-            query += " AND expiration_date >= ?"
+            query += " AND expiration_date >= %s"
             params.append(start_date)
             
         if end_date:
-            query += " AND expiration_date <= ?"
+            query += " AND expiration_date <= %s"
             params.append(end_date)
             
         # Agregar límite
-        query += " ORDER BY expiration_date LIMIT ?"
+        query += " ORDER BY expiration_date LIMIT %s"
         params.append(limit)
         
         # Ejecutar consulta
@@ -627,3 +769,120 @@ class Expiration:
         
         results = db.execute_query(query, (limit,))
         return [(row['full_name'], row['count']) for row in results]
+
+    def _get_status_id_by_name(self, status_name: str) -> Optional[int]:
+        """
+        Obtiene el ID de un estado a partir de su nombre
+        
+        Args:
+            status_name: Nombre del estado
+            
+        Returns:
+            ID del estado o None si no se encuentra
+        """
+        try:
+            query = "SELECT id FROM expiration_statuses WHERE name = ?"
+            result = self.db.execute_query(query, (status_name,))
+            
+            if result:
+                return result[0]['id']
+            return None
+        except Exception as e:
+            print(f"Error al obtener ID de estado: {e}")
+            return None
+    
+    def _get_status_name_by_id(self, status_id: int) -> Optional[str]:
+        """
+        Obtiene el nombre de un estado a partir de su ID
+        
+        Args:
+            status_id: ID del estado
+            
+        Returns:
+            Nombre del estado o None si no se encuentra
+        """
+        try:
+            if not status_id:
+                return "No asignado"
+                
+            query = "SELECT name FROM expiration_statuses WHERE id = %s"
+            result = self.db.execute_query(query, (status_id,))
+            
+            if result:
+                return result[0]['name']
+            return "Desconocido"
+        except Exception as e:
+            print(f"Error al obtener nombre de estado: {e}")
+            return "Error"
+            
+    def _get_responsible_name_by_id(self, responsible_id: int) -> str:
+        """
+        Obtiene el nombre del responsable a partir de su ID
+        
+        Args:
+            responsible_id: ID del responsable
+            
+        Returns:
+            Nombre del responsable o un valor por defecto si no se encuentra
+        """
+        try:
+            if not responsible_id:
+                return "No asignado"
+                
+            query = "SELECT full_name FROM users WHERE id = %s"
+            result = self.db.execute_query(query, (responsible_id,))
+            
+            if result:
+                return result[0]['full_name']
+            return "Desconocido"
+        except Exception as e:
+            print(f"Error al obtener nombre de responsable: {e}")
+            return "Error"
+            
+    def _get_priority_name_by_id(self, priority_id: int) -> str:
+        """
+        Obtiene el nombre de una prioridad a partir de su ID
+        
+        Args:
+            priority_id: ID de la prioridad
+            
+        Returns:
+            Nombre de la prioridad o un valor por defecto si no se encuentra
+        """
+        try:
+            if not priority_id:
+                return "No asignada"
+                
+            query = "SELECT name FROM priorities WHERE id = %s"
+            result = self.db.execute_query(query, (priority_id,))
+            
+            if result:
+                return result[0]['name']
+            return "Desconocida"
+        except Exception as e:
+            print(f"Error al obtener nombre de prioridad: {e}")
+            return "Error"
+            
+    def _get_sector_name_by_id(self, sector_id: int) -> str:
+        """
+        Obtiene el nombre de un sector a partir de su ID
+        
+        Args:
+            sector_id: ID del sector
+            
+        Returns:
+            Nombre del sector o un valor por defecto si no se encuentra
+        """
+        try:
+            if not sector_id:
+                return "No asignado"
+                
+            query = "SELECT name FROM sectors WHERE id = %s"
+            result = self.db.execute_query(query, (sector_id,))
+            
+            if result:
+                return result[0]['name']
+            return "Desconocido"
+        except Exception as e:
+            print(f"Error al obtener nombre de sector: {e}")
+            return "Error"

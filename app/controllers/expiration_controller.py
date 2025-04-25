@@ -138,7 +138,7 @@ class ExpirationController:
     
     def renew_expiration(self, expiration_id: int, new_date: date, notes: str = "") -> Tuple[bool, Optional[int], str]:
         """
-        Renueva un vencimiento, marcándolo como renovado y creando uno nuevo
+        Renueva un vencimiento, actualizando la fecha de vencimiento
         
         Args:
             expiration_id: ID del vencimiento a renovar
@@ -146,23 +146,20 @@ class ExpirationController:
             notes: Notas sobre la renovación
             
         Returns:
-            Tuple con éxito (bool), ID del nuevo vencimiento y mensaje de error si hubo fallo
+            Tuple con éxito (bool), ID del vencimiento renovado y mensaje de error si hubo fallo
         """
         try:
             expiration = Expiration.get_by_id(expiration_id)
             if not expiration:
                 return False, None, "Vencimiento no encontrado"
+            
+            # Validar que la fecha de renovación sea posterior a la fecha actual
+            if new_date <= date.today():
+                return False, None, f"La fecha de renovación debe ser posterior a la fecha actual del sistema ({date.today().strftime('%d/%m/%Y')})"
                 
             if expiration.renew(new_date, notes):
-                # Obtener el ID del nuevo vencimiento (último creado)
-                from ..database.connection import DatabaseConnection
-                db = DatabaseConnection()
-                result = db.execute_query("SELECT LAST_INSERT_ID() as id")
-                if result:
-                    new_id = result[0]['id']
-                    return True, new_id, ""
-                else:
-                    return True, None, "No se pudo obtener el ID del nuevo vencimiento"
+                # Devolver el mismo ID ya que solo se actualizó el registro
+                return True, expiration_id, ""
             else:
                 return False, None, "Error al renovar el vencimiento"
         except Exception as e:
@@ -431,7 +428,7 @@ class ExpirationController:
     
     def get_alerts_by_expiration(self, expiration_id: int) -> Tuple[bool, List[Dict[str, Any]], str]:
         """
-        Obtiene todas las alertas para un vencimiento
+        Obtiene las alertas configuradas para un vencimiento
         
         Args:
             expiration_id: ID del vencimiento
@@ -440,10 +437,28 @@ class ExpirationController:
             Tuple con éxito (bool), lista de alertas y mensaje de error si hubo fallo
         """
         try:
-            alerts = Alert.get_by_expiration(expiration_id)
-            return True, [alert.to_dict() for alert in alerts], ""
+            expiration = Expiration(id=expiration_id)
+            alerts = expiration.get_alerts()
+            return True, alerts, ""
         except Exception as e:
             return False, [], f"Error al obtener alertas: {e}"
+    
+    def get_expiration_history(self, expiration_id: int) -> Tuple[bool, List[Dict[str, Any]], str]:
+        """
+        Obtiene el historial de cambios para un vencimiento
+        
+        Args:
+            expiration_id: ID del vencimiento
+            
+        Returns:
+            Tuple con éxito (bool), lista de registros históricos y mensaje de error si hubo fallo
+        """
+        try:
+            expiration = Expiration(id=expiration_id)
+            history = expiration.get_history()
+            return True, history, ""
+        except Exception as e:
+            return False, [], f"Error al obtener historial: {e}"
     
     def process_due_alerts(self) -> Tuple[bool, int, str]:
         """

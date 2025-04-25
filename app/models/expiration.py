@@ -217,57 +217,49 @@ class Expiration:
         return self.db.execute_query(query, (self.id,))
     
     def renew(self, new_expiration_date: date, notes: str = "") -> bool:
-        """Renueva un vencimiento, marcándolo como renovado y creando uno nuevo"""
+        """Renueva un vencimiento, actualizando la fecha de vencimiento"""
         if not self.id:
+            return False
+        
+        # Validar que la fecha de renovación sea posterior a la fecha actual
+        if new_expiration_date <= date.today():
+            # En lugar de imprimir en consola, retornamos False y el mensaje de error
+            # será mostrado como ventana emergente por el controlador
             return False
             
         try:
             # Iniciar transacción
             self.db.begin_transaction()
             
-            # Marcar este vencimiento como renovado
+            # Guardar el estado actual
+            old_status = self.status_id
+            
+            # Actualizar la fecha de vencimiento
+            self.expiration_date = new_expiration_date
+            
+            # Cambiar estado a 'Renovado'
+            # Obtener el ID del estado 'Renovado'
             status_renovado = self.db.execute_query(
                 "SELECT id FROM expiration_statuses WHERE name = 'Renovado'"
             )
             
             if status_renovado:
-                status_id = status_renovado[0]['id']
-                
-                # Actualizar estado
-                old_status = self.status_id
-                self.status_id = status_id
-                
-                # Agregar nota de renovación
-                if notes:
-                    if self.notes:
-                        self.notes += f"\n[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
-                    else:
-                        self.notes = f"[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
-                
-                # Guardar cambios
-                self.save()
-                
-                # Crear nuevo vencimiento
-                new_expiration = Expiration(
-                    expiration_date=new_expiration_date,
-                    concept=self.concept,
-                    responsible_id=self.responsible_id,
-                    priority_id=self.priority_id,
-                    sector_id=self.sector_id,
-                    status_id=old_status,  # Usar el estado original
-                    notes=f"Continuación del vencimiento anterior (ID: {self.id})",
-                    created_by=self.created_by
-                )
-                
-                if new_expiration.save():
-                    # Confirmar transacción
-                    self.db.commit()
-                    return True
+                self.status_id = status_renovado[0]['id']
+            
+            # Agregar nota de renovación
+            if notes:
+                if self.notes:
+                    self.notes += f"\n[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
                 else:
-                    # Revertir transacción
-                    self.db.rollback()
-                    return False
+                    self.notes = f"[{datetime.now().strftime('%Y-%m-%d')}] Renovado: {notes}"
+            
+            # Guardar cambios
+            if self.save():
+                # Confirmar transacción
+                self.db.commit()
+                return True
             else:
+                # Revertir transacción
                 self.db.rollback()
                 return False
         except Exception as e:
@@ -281,6 +273,17 @@ class Expiration:
             return False
             
         try:
+            # Verificar si el nuevo estado es 'Renovado'
+            status_renovado = self.db.execute_query(
+                "SELECT id FROM expiration_statuses WHERE name = 'Renovado'"
+            )
+            
+            # Si el estado es 'Renovado', validar que la fecha de vencimiento sea mayor a la fecha actual
+            if status_renovado and new_status_id == status_renovado[0]['id']:
+                if self.expiration_date <= date.today():
+                    print(f"Error: La fecha de vencimiento debe ser mayor a la fecha actual para cambiar a estado 'Renovado'")
+                    return False
+            
             old_status = self.status_id
             self.status_id = new_status_id
             
