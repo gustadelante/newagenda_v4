@@ -134,7 +134,7 @@ class ExpirationListView(QWidget):
         self.edit_button.setEnabled(False)  # Inicialmente deshabilitado hasta que se seleccione una fila
         
         self.refresh_button = QPushButton("Actualizar")
-        self.refresh_button.clicked.connect(self.refresh_data)
+        self.refresh_button.clicked.connect(self.run_status_update_and_refresh)
         
         actions_layout.addWidget(self.new_button)
         actions_layout.addWidget(self.edit_button)
@@ -249,6 +249,15 @@ class ExpirationListView(QWidget):
             if index >= 0:
                 self.status_combo.setCurrentIndex(index)
     
+    def run_status_update_and_refresh(self):
+        """Ejecuta el job de actualización de estados y refresca la tabla"""
+        try:
+            from app.expirations.jobs.expiration_status_updater import job_update_expiration_status
+            job_update_expiration_status()
+        except Exception as e:
+            print(f"Advertencia: No se pudo ejecutar el job de actualización de vencimientos: {e}")
+        self.refresh_data()
+
     def refresh_data(self):
         """Actualiza los datos de la tabla de vencimientos"""
         # Obtener todos los vencimientos

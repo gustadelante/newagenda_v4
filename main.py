@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QPixmap, QIcon
 
 from app.core.database.schema import initialize_database
+from app.core.config import DB_CONFIG, EMAIL_CONFIG  # Acceso centralizado a configuración
 from app.authentication.controllers.auth_controller import AuthController
 from app.authentication.views.login_window import LoginWindow
 from app.views.main_window import MainWindow
@@ -80,6 +81,12 @@ class NewAgendaApp:
     
     def on_login_successful(self):
         """Maneja el evento de inicio de sesión exitoso"""
+        # Ejecutar job de actualización de estados de vencimientos
+        try:
+            from app.expirations.jobs.expiration_status_updater import job_update_expiration_status
+            job_update_expiration_status()
+        except Exception as e:
+            print(f"Advertencia: No se pudo ejecutar el job de actualización de vencimientos: {e}")
         # Ocultar ventana de login
         if self.login_window:
             self.login_window.hide()

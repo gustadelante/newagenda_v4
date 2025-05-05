@@ -27,13 +27,8 @@ class DatabaseConnection:
             return
             
         if config is None:
-            self._config = {
-                'host': '127.0.0.1',
-                'user': 'root',
-                'password': 'pepe01',
-                'database': 'new_agenda',
-                'port': 3306
-            }
+            from app.core.config import DB_CONFIG
+            self._config = DB_CONFIG
         else:
             self._config = config
             

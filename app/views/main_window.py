@@ -37,13 +37,12 @@ class MainWindow(QMainWindow):
 
     def show_admin_panel(self):
         """Muestra el panel de administración en un diálogo modal"""
-        if not self.admin_panel:
-            from .admin_views import AdminPanel
-            self.admin_panel = AdminPanel(self.current_user)
+        from .admin_views import AdminPanel
+        admin_panel = AdminPanel(self.current_user)
         dialog = QDialog(self)
         dialog.setWindowTitle('Panel de Administración')
         layout = QVBoxLayout(dialog)
-        layout.addWidget(self.admin_panel)
+        layout.addWidget(admin_panel)
         dialog.setLayout(layout)
         dialog.setMinimumSize(900, 600)
         dialog.exec()
@@ -299,15 +298,15 @@ class MainWindow(QMainWindow):
         
         # Botón Cambiar Tema (a la derecha)
         # Botón de cambio de tema (claro/oscuro)
-        theme_button = QPushButton()
-        theme_button.setFixedSize(30, 30)
-        theme_button.setToolTip("Cambiar tema claro/oscuro")
-        theme_button.clicked.connect(self.handle_theme_toggle)
-        self.update_theme_button(theme_button)
-        theme_manager.themeChanged.connect(lambda: self.update_theme_button(theme_button))
+        self.theme_button = QPushButton()
+        self.theme_button.setFixedSize(30, 30)
+        self.theme_button.setToolTip("Cambiar tema claro/oscuro")
+        self.theme_button.clicked.connect(self.handle_theme_toggle)
+        self.update_theme_button()
+        theme_manager.themeChanged.connect(self.update_theme_button)
         theme_manager.themeChanged.connect(self.update_welcome_label_style)  # Refuerzo explícito
-        theme_button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
-        toolbar.addWidget(theme_button)
+        self.theme_button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
+        toolbar.addWidget(self.theme_button)
     
     def setup_statusbar(self):
         """Configura la barra de estado"""
@@ -317,14 +316,16 @@ class MainWindow(QMainWindow):
         # Mensaje inicial
         self.statusBar.showMessage("Listo", 3000)
     
-    def update_theme_button(self, button):
+    def update_theme_button(self):
         """Actualiza el ícono del botón de tema según el modo actual"""
+        if not hasattr(self, 'theme_button') or self.theme_button is None:
+            return
         # El ícono muestra a qué modo vas a cambiar:
         if theme_manager.darkMode:
-            button.setText("☀️")  # Cambiar a claro
+            self.theme_button.setText("☀️")  # Cambiar a claro
         else:
-            button.setText("🌙")  # Cambiar a oscuro
-        button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
+            self.theme_button.setText("🌙")  # Cambiar a oscuro
+        self.theme_button.setStyleSheet(f"QPushButton {{ background-color: transparent; color: {theme_manager.get_color('info')}; border: none; }} QPushButton:hover {{ color: {theme_manager.get_color('primary_hover')}; }}")
 
     def handle_theme_toggle(self):
         """Cambia el tema y actualiza explícitamente el label de bienvenida"""

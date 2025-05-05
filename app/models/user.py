@@ -18,7 +18,7 @@ class User:
         self.phone = phone
         self.is_active = is_active
         self.roles = []
-        self.db = DatabaseConnection()
+        self.db = DatabaseConnection()  # Configuración tomada desde .env
     
     @staticmethod
     def hash_password(password: str) -> str:
@@ -218,7 +218,7 @@ class User:
     @classmethod
     def get_by_id(cls, user_id: int) -> Optional['User']:
         """Obtiene un usuario por su ID"""
-        db = DatabaseConnection()
+        db = DatabaseConnection()  # Configuración tomada desde .env
         result = db.execute_query("SELECT * FROM users WHERE id = ?", (user_id,))
         
         if result:
@@ -239,7 +239,7 @@ class User:
     @classmethod
     def get_by_username(cls, username: str) -> Optional['User']:
         """Obtiene un usuario por su nombre de usuario"""
-        db = DatabaseConnection()
+        db = DatabaseConnection()  # Configuración tomada desde .env
         result = db.execute_query("SELECT * FROM users WHERE username = ?", (username,))
         
         if result:
@@ -260,7 +260,7 @@ class User:
     @classmethod
     def get_by_email(cls, email: str) -> Optional['User']:
         """Obtiene un usuario por su correo electrónico"""
-        db = DatabaseConnection()
+        db = DatabaseConnection()  # Configuración tomada desde .env
         result = db.execute_query("SELECT * FROM users WHERE email = ?", (email,))
         
         if result:
@@ -281,7 +281,7 @@ class User:
     @classmethod
     def authenticate(cls, username: str, password: str) -> Optional['User']:
         """Autentica un usuario con su nombre de usuario y contraseña"""
-        db = DatabaseConnection()
+        db = DatabaseConnection()  # Configuración tomada desde .env
         result = db.execute_query(
             "SELECT * FROM users WHERE (username = ? OR email = ?) AND is_active = TRUE",
             (username, username)
@@ -309,7 +309,7 @@ class User:
     @classmethod
     def get_all(cls) -> List['User']:
         """Obtiene todos los usuarios"""
-        db = DatabaseConnection()
+        db = DatabaseConnection()  # Configuración tomada desde .env
         results = db.execute_query("SELECT * FROM users")
         
         users = []

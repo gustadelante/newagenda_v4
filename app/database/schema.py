@@ -12,19 +12,19 @@ class DatabaseSchema:
         """Crea la base de datos si no existe"""
         try:
             # Conectar sin especificar una base de datos
-            config = {
-                'host': '127.0.0.1',
-                'user': 'root',
-                'password': 'pepe01',
-                'port': 3306
+            # Configuración tomada de .env automáticamente por DatabaseConnection
+                # 'host': tomado desde .env,
+                # 'user': tomado desde .env,
+                # 'password': tomado desde .env,
+                # 'port': tomado desde .env
             }
-            self.db = DatabaseConnection(config)
+            self.db = DatabaseConnection()
             conn = self.db.get_connection()
             cursor = conn.cursor()
             
             # Crear la base de datos si no existe
-            cursor.execute("CREATE DATABASE IF NOT EXISTS new_agenda")
-            cursor.execute("USE new_agenda")
+            cursor.execute("CREATE DATABASE IF NOT EXISTS %(database)s" % self.db.config)
+            cursor.execute("USE %(database)s" % self.db.config)
             
             conn.commit()
             cursor.close()

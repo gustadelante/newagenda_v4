@@ -35,6 +35,14 @@ class NotificationService:
             
         # Cargar configuración
         self.config = self._load_config(config_file)
+        # Sobrescribir configuración de email con datos de entorno si existen
+        from app.core.config import EMAIL_CONFIG
+        self.config['email'].update({
+            'server': EMAIL_CONFIG.get('host', self.config['email'].get('server', '')),
+            'port': EMAIL_CONFIG.get('port', self.config['email'].get('port', 587)),
+            'username': EMAIL_CONFIG.get('user', self.config['email'].get('username', '')),
+            'password': EMAIL_CONFIG.get('password', self.config['email'].get('password', '')),
+        })
         self._initialized = True
     
     def _load_config(self, config_file: Optional[str]) -> Dict[str, Any]:

@@ -21,12 +21,21 @@ class PermissionForm(QDialog):
         btns = QHBoxLayout()
         save_btn = QPushButton("Guardar")
         cancel_btn = QPushButton("Cancelar")
-        save_btn.clicked.connect(self.accept)
+        save_btn.clicked.connect(self.validate_and_accept)
         cancel_btn.clicked.connect(self.reject)
         btns.addWidget(save_btn)
         btns.addWidget(cancel_btn)
         layout.addLayout(btns)
         self.setLayout(layout)
+
+    def validate_and_accept(self):
+        name = self.name_edit.text().strip()
+        desc = self.desc_edit.text().strip()
+        if not name or not desc:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Campos requeridos", "Por favor, complete todos los campos obligatorios.")
+            return
+        self.accept()
 
     def get_data(self):
         return {

@@ -1,6 +1,6 @@
 from app.permissions.controllers.permission_controller import PermissionController
 from app.core.database.db_manager import DatabaseConnection
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QHBoxLayout, QDialog
 from app.permissions.views.permission_form import PermissionForm
 
 class PermissionManagementView(QWidget):
@@ -23,6 +23,9 @@ class PermissionManagementView(QWidget):
         self.create_btn = QPushButton('Crear permiso')
         self.create_btn.clicked.connect(self.create_permission)
         btn_layout.addWidget(self.create_btn)
+        self.delete_btn = QPushButton('Eliminar permiso')
+        self.delete_btn.clicked.connect(self.delete_permission)
+        btn_layout.addWidget(self.delete_btn)
         self.refresh_btn = QPushButton('Refrescar')
         self.refresh_btn.clicked.connect(self.load_permissions)
         btn_layout.addWidget(self.refresh_btn)
@@ -47,17 +50,32 @@ class PermissionManagementView(QWidget):
 
     def create_permission(self):
         form = PermissionForm(parent=self)
-        if form.exec() == form.Accepted:
+        if form.exec() == QDialog.Accepted:
             data = form.get_data()
             self.permission_controller.create_permission(data['name'], data['description'])
             self.load_permissions()
             QMessageBox.information(self, "Éxito", "Permiso creado correctamente.")
 
+    def delete_permission(self):
+        selected = self.table.currentRow()
+        if selected < 0:
+            QMessageBox.warning(self, "Eliminar permiso", "Seleccione un permiso para eliminar.")
+            return
+        perm_id = int(self.table.item(selected, 0).text())
+        nombre = self.table.item(selected, 1).text()
+        confirm = QMessageBox.question(self, "Confirmar eliminación", f"¿Está seguro de eliminar el permiso '{nombre}'?", QMessageBox.Yes | QMessageBox.No)
+        if confirm == QMessageBox.Yes:
+            if self.permission_controller.delete_permission(perm_id):
+                self.load_permissions()
+                QMessageBox.information(self, "Permiso eliminado", "El permiso fue eliminado correctamente.")
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo eliminar el permiso.")
+
     def edit_permission(self, row, column):
         perm_id = int(self.table.item(row, 0).text())
         perm = self.permission_controller.get_permission(perm_id)
         form = PermissionForm(perm, parent=self)
-        if form.exec() == form.Accepted:
+        if form.exec() == QDialog.Accepted:
             data = form.get_data()
             self.permission_controller.update_permission(perm_id, **data)
             self.load_permissions()
